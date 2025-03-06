@@ -1,0 +1,24 @@
+name: Deploy Kubernetes cluster
+
+concurrency:
+  group: ${{ github.repository_id }} 
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Get private key from secrets
+        run: echo "${{ secrets.PRIVATE_KEY }}" > ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa
+
+      - name: Apply changes
+        run: make upgrade
