@@ -21,3 +21,6 @@ __pycache__
 # Kubespray
 private.key
 credentials
+
+# CNTB
+.cntb
