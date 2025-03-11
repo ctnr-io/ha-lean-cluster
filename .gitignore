@@ -27,3 +27,7 @@ credentials
 
 # Templates
 kubeconfig.yml
+inventory.ini
+group_vars/all/all.yml
+group_vars/k8s_cluster/k8s-cluster.yml
+group_vars/k8s_cluster/addons.yml
