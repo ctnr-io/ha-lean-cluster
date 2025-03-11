@@ -1,4 +1,10 @@
+import { privateNetworks } from '../../_helpers.ts'
 
+const yaml = String.raw
+
+const privateIpRanges = '[' + privateNetworks.map(pn => pn.cidr).join(", ") + ']'
+
+export default yaml`
 ---
 # Kubernetes dashboard
 # RBAC required. see docs/getting-started.md for access details.
@@ -208,7 +214,7 @@ metallb_config:
         effect: "NoSchedule"
   address_pools:
     primary:
-      ip_range: [10.0.0.0/22]
+      ip_range: ${privateIpRanges}
       auto_assign: true
     # pool1:
     #   ip_range:
@@ -285,3 +291,4 @@ node_feature_discovery_enabled: false
 # node_feature_discovery_worker_sa_create: false
 # node_feature_discovery_master_config:
 #   extraLabelNs: ["nvidia.com"]
+`

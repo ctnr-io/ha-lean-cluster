@@ -1,5 +1,5 @@
-const { default: instances } = await import("../.cntb/instances.json", { with: { type: "json" } });
-const { default: networks } = await import("../.cntb/private-networks.json", { with: { type: "json" } });
+export const { default: instances } = await import("../.cntb/instances.json", { with: { type: "json" } });
+export const { default: privateNetworks } = await import("../.cntb/private-networks.json", { with: { type: "json" } });
 
 type ContaboInstance = (typeof instances)[number];
 
@@ -13,14 +13,16 @@ type KubesprayNode = {
   readonly roles: KubesprayNodeRoles;
 };
 
+export const domainName = "ctnr.io";
+
 /**
- * Validate that each instances has the same private IPs in all networks to facilitate node communication
+ * Validate that each instances has the same private IPs in all private networks to facilitate node communication
  * Currently, some instance fail to be connected to the private network, so I accept no 
  */
 const getPrivateIp = (instance: ContaboInstance): string => {
   const privateIps = [
     ...new Set(
-      networks.map((network) => {
+      privateNetworks.map((network) => {
         return network.instances.find((node) => node.instanceId === instance.instanceId)?.privateIpConfig.v4[0].ip;
       })
     ),
@@ -30,7 +32,7 @@ const getPrivateIp = (instance: ContaboInstance): string => {
   }
   if (privateIps.length > 1) {
     throw new Error(
-      `Instance ${instance.displayName} has different private IPs in different networks: ${Array.from(privateIps).join(
+      `Instance ${instance.displayName} has different private IPs in different private networks: ${Array.from(privateIps).join(
         ", "
       )}`
     );
