@@ -24,3 +24,6 @@ credentials
 
 # CNTB
 .cntb
+
+# Templates
+kubeconfig.yml

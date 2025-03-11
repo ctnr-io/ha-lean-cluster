@@ -1,4 +1,8 @@
+import { apiserverPort } from "../../_helpers.ts";
 
+const yaml = String.raw
+
+export default yaml`
 ---
 ## Directory where the binaries will be installed
 bin_dir: /usr/local/bin
@@ -24,7 +28,7 @@ bin_dir: /usr/local/bin
 
 ## Local loadbalancer should use this port
 ## And must be set port 6443
-loadbalancer_apiserver_port: 6443
+loadbalancer_apiserver_port: ${apiserverPort}
 
 ## If loadbalancer_apiserver_healthcheck_port variable defined, enables proxy liveness check for nginx.
 loadbalancer_apiserver_healthcheck_port: 8081
@@ -136,3 +140,4 @@ unsafe_show_logs: false
 
 ## If enabled it will allow kubespray to attempt setup even if the distribution is not supported. For unsupported distributions this can lead to unexpected failures in some cases.
 allow_unsupported_distribution_setup: false
+`

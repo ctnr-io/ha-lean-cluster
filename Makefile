@@ -84,3 +84,4 @@ generate: .cntb .cntb/private-networks.json .cntb/instances.json
 	@cntb get privateNetworks --output json > .cntb/private-networks.json
 .cntb/instances.json: .FORCE
 	@cntb get instances --output json > .cntb/instances.json
+

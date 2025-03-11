@@ -3,14 +3,14 @@ export const { default: privateNetworks } = await import("../.cntb/private-netwo
 
 type ContaboInstance = (typeof instances)[number];
 
-const KubesprayNodeRoles = ["control-plane", "etcd", "worker"] as const;
-type KubesprayNodeRoles = (typeof KubesprayNodeRoles)[number][];
+const NodeRoles = ["control-plane", "etcd", "worker"] as const;
+type NodeRoles = (typeof NodeRoles)[number][];
 
-type KubesprayNode = {
+type Node = {
   name: string;
-  ansible_host: string;
-  ip: string;
-  readonly roles: KubesprayNodeRoles;
+  publicIp: string;
+  privateIp: string;
+  readonly roles: NodeRoles;
 };
 
 export const domainName = "ctnr.io";
@@ -40,36 +40,36 @@ const getPrivateIp = (instance: ContaboInstance): string => {
   return privateIps[0]!;
 };
 
-const getKubesprayNodeRoles = (instance: ContaboInstance): KubesprayNodeRoles => {
-  const roles = [...new Set(KubesprayNodeRoles.filter((role) => instance.displayName.includes(role)))];
+const getNodeRoles = (instance: ContaboInstance): NodeRoles => {
+  const roles = [...new Set(NodeRoles.filter((role) => instance.displayName.includes(role)))];
   return roles;
 };
 
-const transformToKubesprayNode = (instance: ContaboInstance): KubesprayNode => {
+const transformToNode = (instance: ContaboInstance): Node => {
   return {
     name: instance.name,
-    ansible_host: instance.ipv4,
-    ip: getPrivateIp(instance),
-    roles: getKubesprayNodeRoles(instance),
+    publicIp: instance.ipv4,
+    privateIp: getPrivateIp(instance),
+    roles: getNodeRoles(instance),
   };
 };
 
-export const transformKubesprayNodeToString = (node: KubesprayNode): string => {
-  return `${node.name}\tansible_host=${node.ansible_host}\tip=${node.ip}\t# roles=${node.roles.join(",")}`;
+export const transformNodeToString = (node: Node): string => {
+  return `${node.name}\tansible_host=${node.publicIp}\tip=${node.privateIp}\t# roles=${node.roles.join(",")}`;
 };
 
 // Sort nodes by roles to ensure that control-plane nodes are first or by name if roles are the same
-const sortKubesprayNodes = (a: KubesprayNode, b: KubesprayNode) => {
-  const aIndex = KubesprayNodeRoles.indexOf(a.roles[0]);
-  const bIndex = KubesprayNodeRoles.indexOf(b.roles[0]);
+const sortNodes = (a: Node, b: Node) => {
+  const aIndex = NodeRoles.indexOf(a.roles[0]);
+  const bIndex = NodeRoles.indexOf(b.roles[0]);
   return aIndex - bIndex ? aIndex - bIndex : a.name.localeCompare(b.name);
 };
 
-const kubesprayNodes = instances.map(transformToKubesprayNode).sort(sortKubesprayNodes);
+const Nodes = instances.map(transformToNode).sort(sortNodes);
 
-export const controlPlanes = kubesprayNodes.filter((node) => node.roles.includes("control-plane"));
-export const etcds = kubesprayNodes.filter((node) => node.roles.includes("etcd"));
-export const workers = kubesprayNodes.filter((node) => node.roles.includes("worker"));
+export const controlPlanes = Nodes.filter((node) => node.roles.includes("control-plane"));
+export const etcds = Nodes.filter((node) => node.roles.includes("etcd"));
+export const workers = Nodes.filter((node) => node.roles.includes("worker"));
 
 if (controlPlanes.length === 0) {
   throw new Error("No control-plane nodes found");
@@ -81,4 +81,5 @@ if (workers.length === 0) {
   throw new Error("No worker nodes found");
 }
 
-
+export const apiserverIp = controlPlanes[0].publicIp;
+export const apiserverPort = 6443;

@@ -1,3 +1,4 @@
+import { apiserverIp } from '../../_helpers.ts';
 import { privateNetworks } from '../../_helpers.ts'
 
 const yaml = String.raw
@@ -269,14 +270,14 @@ krew_enabled: false
 krew_root_dir: "/usr/local/krew"
 
 # Kube VIP
-kube_vip_enabled: false
-# kube_vip_arp_enabled: true
-# kube_vip_controlplane_enabled: true
-# kube_vip_address: 192.168.56.120
-# loadbalancer_apiserver:
-#   address: "{{ kube_vip_address }}"
-#   port: 6443
-# kube_vip_interface: eth0
+kube_vip_enabled: true 
+kube_vip_arp_enabled: true
+kube_vip_controlplane_enabled: true
+kube_vip_address: ${apiserverIp}  # This becomes the VIP
+loadbalancer_apiserver:
+  address: "{{ kube_vip_address }}"
+  port: 6443
+kube_vip_interface: eth0
 # kube_vip_services_enabled: false
 # kube_vip_dns_mode: first
 # kube_vip_cp_detect: false

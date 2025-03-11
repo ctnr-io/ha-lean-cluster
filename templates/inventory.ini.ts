@@ -1,4 +1,4 @@
-import { controlPlanes, etcds, workers, transformKubesprayNodeToString } from "./_helpers.ts";
+import { controlPlanes, etcds, workers, transformNodeToString } from "./_helpers.ts";
 
 const ini = String.raw;
 
@@ -11,11 +11,11 @@ export default ini`
 # We should set etcd_member_name for etcd cluster. The node that are not etcd members do not need to set the value,
 # or can set the empty string value.
 [kube_control_plane]
-${controlPlanes.map(transformKubesprayNodeToString).join("\n")}
+${controlPlanes.map(transformNodeToString).join("\n")}
 
 [etcd]
-${etcds.map(transformKubesprayNodeToString).join("\n")}
+${etcds.map(transformNodeToString).join("\n")}
 
 [kube_node]
-${workers.map(transformKubesprayNodeToString).join("\n")}
+${workers.map(transformNodeToString).join("\n")}
 `;
