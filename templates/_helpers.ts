@@ -1,7 +1,12 @@
+import * as process from "node:process";
+
 const { default: allInstances } = await import("../.cntb/instances.json", { with: { type: "json" } });
 const { default: allPrivateNetworks } = await import("../.cntb/private-networks.json", { with: { type: "json" } });
 
-export const domainName = "ctnr.io";
+export const domainName = process.env.DOMAIN_NAME;
+if (!domainName) {
+  throw new Error("DOMAIN_NAME environment variable is required");
+}
 
 export const instances = allInstances.filter((instance) => instance.displayName.startsWith(`${domainName}-`));
 export const privateNetworks = allPrivateNetworks.filter((network) => network.name.startsWith(`${domainName}-`));
