@@ -10,14 +10,45 @@ A High Availability, frugal Kubernetes cluster using [Kubespray](https://github.
 - **Flexible Architecture**: Single or multi-node, control-plane + worker combinations
 - **Template-Based**: TypeScript templates for consistent, reproducible deployments
 
+## Activated Features
+
+### Core Kubernetes Features
+- Latest Kubernetes version (v1.31.4)
+- Containerd runtime as container manager
+- Secret encryption at rest enabled
+- Calico network plugin
+- IPVS proxy mode with strict ARP (required for MetalLB and Kube-VIP)
+- NodeLocal DNS cache enabled
+- Supplementary addresses in SSL keys (for high availability)
+
+### Enterprise Add-ons
+- MetalLB load balancer (Layer 2 mode)
+  - Configured for Contabo VPS which doesn't support BGP
+  - Uses ARP/NDP for IP assignment
+- Kube-VIP for high availability
+  - ARP mode enabled
+  - Control plane mode enabled
+  - Provides virtual IP for the Kubernetes API server
+- Gateway API CRDs enabled
+  - Provides modern, extensible service networking
+
+### Security Features
+- Secret encryption at rest
+- Supplementary addresses in SSL keys for secure communication
+
+### Networking Features
+- Calico as the CNI plugin
+- IPVS proxy mode with strict ARP
+- NodeLocal DNS cache for improved DNS performance
+
 ## Quick Start
 
 ```bash
 git clone https://github.com/ctnr.io/ha-lean-cluster.git
 cd ha-lean-cluster
-# Edit templates/inventory.ini.ts with your node IPs
+make login
 make generate
-make deploy
+make apply 
 ```
 
 ## Hardware Requirements
