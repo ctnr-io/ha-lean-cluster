@@ -151,7 +151,7 @@ kube_proxy_nodeport_addresses: >-
 # kube_override_hostname: {{ inventory_hostname }}
 
 ## Encrypting Secret Data at Rest
-kube_encrypt_secret_data: false
+kube_encrypt_secret_data: true 
 
 # Graceful Node Shutdown (Kubernetes >= 1.21.0), see https://kubernetes.io/blog/2021/04/21/graceful-node-shutdown-beta/
 # kubelet_shutdown_grace_period had to be greater than kubelet_shutdown_grace_period_critical_pods to allow
