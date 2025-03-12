@@ -10,36 +10,35 @@ A High Availability, frugal Kubernetes cluster using [Kubespray](https://github.
 - **Flexible Architecture**: Single or multi-node, control-plane + worker combinations
 - **Template-Based**: TypeScript templates for consistent, reproducible deployments
 
+## Cost Comparison
+
+| Configuration                    | HA Lean Cluster (Contabo) | AWS EKS     | GCP GKE     | Azure AKS   | Digital Ocean |
+|----------------------------------|---------------------------|-------------|-------------|-------------|---------------|
+| **3-node cluster (minimal)**     | €14.97/month              | ~€150/month | ~€135/month | ~€160/month | ~€60/month    |
+| **3-node cluster (recommended)** | €29.97/month              | ~€300/month | ~€270/month | ~€320/month | ~€120/month   |
+| **5-node cluster**               | €49.95/month              | ~€500/month | ~€450/month | ~€530/month | ~€200/month   |
+
+### Contabo VPS vs Cloud Providers
+
+| VPS Type  | Contabo Specs    | Contabo Price | AWS Equivalent | AWS Price   | GCP Equivalent | GCP Price   | Azure Equivalent | Azure Price |
+|-----------|------------------|---------------|----------------|-------------|----------------|-------------|------------------|-------------|
+| **VPS S** | 4 vCPU, 8GB RAM  | €4.99/month   | t3.large       | ~€70/month  | e2-standard-2  | ~€60/month  | B2s v2           | ~€65/month  |
+| **VPS M** | 6 vCPU, 16GB RAM | €9.99/month   | t3.xlarge      | ~€140/month | e2-standard-4  | ~€120/month | B4ms v2          | ~€130/month |
+| **VPS L** | 8 vCPU, 32GB RAM | €14.99/month  | t3.2xlarge     | ~€280/month | e2-standard-8  | ~€240/month | B8ms v2          | ~€260/month |
+
+### Cost Savings Factors
+
+- **No Control Plane Fees**: Managed K8s services charge €70-100/month for the control plane
+- **Lower VM Pricing**: Contabo VPS costs 80-90% less than equivalent cloud instances
+- **Included Load Balancing**: MetalLB eliminates the need for paid load balancers (€20-30/month)
+- **Optimized Resource Usage**: Flexible node roles allow for efficient resource allocation
+
 ## Activated Features
 
-### Core Kubernetes Features
-- Latest Kubernetes version (v1.31.4)
-- Containerd runtime as container manager
-- Secret encryption at rest enabled
-- Calico network plugin
-- IPVS proxy mode with strict ARP (required for MetalLB and Kube-VIP)
-- NodeLocal DNS cache enabled
-- Supplementary addresses in SSL keys (for high availability)
-
-### Enterprise Add-ons
-- MetalLB load balancer (Layer 2 mode)
-  - Configured for Contabo VPS which doesn't support BGP
-  - Uses ARP/NDP for IP assignment
-- Kube-VIP for high availability
-  - ARP mode enabled
-  - Control plane mode enabled
-  - Provides virtual IP for the Kubernetes API server
-- Gateway API CRDs enabled
-  - Provides modern, extensible service networking
-
-### Security Features
-- Secret encryption at rest
-- Supplementary addresses in SSL keys for secure communication
-
-### Networking Features
-- Calico as the CNI plugin
-- IPVS proxy mode with strict ARP
-- NodeLocal DNS cache for improved DNS performance
+- **Kubernetes Core**: v1.31.4, containerd runtime, secret encryption at rest
+- **Networking**: Calico CNI, IPVS proxy mode with strict ARP, NodeLocal DNS cache
+- **High Availability**: MetalLB (Layer 2 mode), Kube-VIP (ARP mode), supplementary addresses in SSL keys
+- **Enterprise Features**: Gateway API CRDs, secure communication
 
 ## Quick Start
 
@@ -56,31 +55,41 @@ make apply
 - **Minimal**: 1 Contabo VPS S (4 vCPU, 8GB RAM) - €4.99/month
 - **Recommended**: 3 Contabo VPS S instances - €14.97/month
 
-## Core Configuration Files
+## Configuration & Node Naming
 
-- `templates/inventory.ini.ts`: Node definitions and roles
-- `templates/group_vars/k8s_cluster/k8s-cluster.yml.ts`: Kubernetes settings
-- `templates/group_vars/k8s_cluster/addons.yml.ts`: Addon configurations
+- **Core Files**: `templates/inventory.ini.ts`, `templates/group_vars/k8s_cluster/k8s-cluster.yml.ts`, `templates/group_vars/k8s_cluster/addons.yml.ts`
+- **Node Naming**: Each node name must start with the domain name prefix (`ctnr.io-`) followed by the role:
+  - Control Plane: `<domain-name>-control-plane-X[-etcd][-worker]`
+  - ETCD: `<domain-name>-etcd-X`
+  - Worker: `<domain-name>-worker-X[-etcd]`
+  - Examples: `<domain-name>-control-plane-0-etcd`, `<domain-name>-worker-0`, `<domain-name>-etcd-0`
 
-## Next Steps
+### ⚠️ Important Warning
 
-1. **Validate Deployment**: Run `kubectl get nodes` to verify cluster health ✅
-2. **Implement Volume Provisioning**: Configure storage using Contabo Object Storage and NFS (no block storage available)
-3. **Configure Node Auto Scaling**: Set up cluster autoscaler for dynamic scaling
-4. **Deploy Core Workloads**: Start with stateless applications to test cluster functionality
-5. **Implement Monitoring**: Add lightweight monitoring (Prometheus + Grafana)
-6. **Setup CI/CD Pipeline**: Integrate with GitHub Actions or similar
-7. **Document Performance**: Measure and document resource usage for optimization
+**DO NOT change the first control plane node (<domain-name>-control-plane-0) without understanding the implications!**
 
-## Roadmap
+The first control plane node is critical for cluster stability. Modifying or removing it incorrectly can cause the entire cluster to fail. If you need to replace the first control plane node, follow these steps:
 
-- Automated Contabo VPS provisioning
-- One-click deployment script
-- Lightweight backup solution
-- Multi-region support
-- Performance benchmarks
-- Advanced volume management with Object Storage and NFS integration
-- Improved auto-scaling capabilities
+1. Rename your current nodes so that `<domain-name>-control-plane-1` becomes `<domain-name>-control-plane-0` and vice versa
+2. Apply the configuration
+3. Only then remove the original control plane node
+
+## Next Steps & Roadmap
+
+- **Next**: Validate deployment, implement volume provisioning, configure auto-scaling, deploy workloads, add monitoring
+- **Roadmap**: Automated provisioning, one-click deployment, backup solution, multi-region support, performance benchmarks
+
+## Professional Support
+
+Need help with setup, maintenance, or customization? Contact us directly for professional support services. We can help with:
+
+- Initial cluster deployment and configuration
+- Ongoing maintenance and updates
+- Performance optimization
+- Custom integrations and workload deployment
+- Training and knowledge transfer
+
+Email: contact@ctnr.io
 
 ## License
 

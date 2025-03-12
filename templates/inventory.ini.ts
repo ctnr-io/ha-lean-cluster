@@ -7,6 +7,16 @@ export default ini`
 # See https://docs.ansible.com/ansible/latest/inventory_guide/intro_inventory.html
 # for tips on building your inventory
 
+# ⚠️ IMPORTANT: Node naming convention
+# Each node name must start with the domain name prefix (<domain-name>-) followed by the role:
+# - Control Plane Nodes: <domain-name>-control-plane-X[-etcd][-worker] (where X is the index: 0, 1, 2, etc.)
+# - ETCD Nodes: <domain-name>-etcd-X (where X is the index: 0, 1, 2, etc.)
+# - Worker Nodes: <domain-name>-worker-X[-etcd] (where X is the index: 0, 1, 2, etc.)
+#
+# ⚠️ WARNING: DO NOT change the first control plane node (<domain-name>-control-plane-0) without understanding
+# the implications! See README.md for more details on the proper procedure for replacing
+# the first control plane node.
+
 # Configure 'ip' variable to bind kubernetes services on a different ip than the default iface
 # We should set etcd_member_name for etcd cluster. The node that are not etcd members do not need to set the value,
 # or can set the empty string value.
