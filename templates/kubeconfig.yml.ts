@@ -1,4 +1,4 @@
-import { apiserverIp, apiserverPort } from "./_helpers.ts";
+import { apiserverIp, apiserverPort, domainName } from "./_helpers.ts";
 import * as util from "node:util";
 import * as childProcess from "node:child_process";
 import { encodeBase64 } from "jsr:@std/encoding/base64";
@@ -28,13 +28,13 @@ clusters:
 - cluster:
     certificate-authority-data: ${ca}
     server: https://${apiserverIp}:${apiserverPort} 
-  name: ctnr.io
+  name: ${domainName}
 contexts:
 - context:
-    cluster: ctnr.io 
+    cluster: ${domainName} 
     user: admin
-  name: admin@ctnr.io 
-current-context: admin@ctnr.io 
+  name: admin@${domainName} 
+current-context: admin@${domainName} 
 users:
 - name: admin 
   user:

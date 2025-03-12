@@ -1,4 +1,4 @@
-# High Availability & Lean Kubernetes Cluster
+# High Availability but Lean Kubernetes Cluster
 
 A High Availability, frugal Kubernetes cluster using [Kubespray](https://github.com/kubernetes-sigs/kubespray) optimized for Contabo VPS. Deploy enterprise-grade Kubernetes at 1/10th the cost of managed solutions.
 
