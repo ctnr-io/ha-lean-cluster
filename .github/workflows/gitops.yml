@@ -15,6 +15,8 @@ jobs:
   apply:
     name: Apply changes
     runs-on: ubuntu-latest
+    env:
+        DOMAIN_NAME: ${{ vars.DOMAIN_NAME }}
     steps:
       - name: Checkout
         uses: actions/checkout@v2
