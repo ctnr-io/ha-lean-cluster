@@ -1,8 +1,9 @@
-name: Apply changes 
+name: Apply changes
 
 concurrency:
-  group: ${{ github.repository_id }} 
-  cancel-in-progress: true
+  # Wait for other workflows to finish before starting this one
+  group: ${{ github.repository_id }}
+  cancel-in-progress: false 
 
 on:
   workflow_dispatch:
@@ -12,6 +13,7 @@ on:
 
 jobs:
   apply:
+    name: Apply changes
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -20,5 +22,15 @@ jobs:
       - name: Get private key from secrets
         run: echo "${{ secrets.PRIVATE_KEY }}" > private.key
 
+      - name: Get Contabo YAML from secrets && install cntb
+        run: |
+          echo "${{ secrets.CNTB_YAML_B64 }}" | base64 -d > ~/.cntb.yaml
+          curl -sL https://github.com/contabo/cntb/releases/download/v1.5.3/cntb_v1.5.3_linux_amd64.tar.gz | tar xz -C /usr/local/bin cntb 
+          chmod +x /usr/local/bin/cntb
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
       - name: Apply changes
-        run: make upgrade
+        run: make apply
