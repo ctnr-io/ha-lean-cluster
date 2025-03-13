@@ -1,9 +1,10 @@
-import { apiserverIp } from '../../_helpers.ts';
+import { apiserverPrivateIp, apiserverPublicIp, nodes } from '../../_helpers.ts';
 import { privateNetworks } from '../../_helpers.ts'
 
 const yaml = String.raw
 
 const privateIpRanges = '[' + privateNetworks.map(pn => pn.cidr).join(", ") + ']'
+const publicIpRanges = '[' + nodes.map(node => node.publicIp).join(", ") + ']'
 
 export default yaml`
 ---
@@ -215,18 +216,14 @@ metallb_config:
         effect: "NoSchedule"
   address_pools:
     primary:
-      ip_range: ${privateIpRanges}
+      ip_range: ${'[' + nodes.map(node => node.publicIp).join(", ") + ']'}
       auto_assign: true
-    # pool1:
-    #   ip_range:
-    #     - 10.6.0.0/16
-    #   auto_assign: true
     # pool2:
     #   ip_range:
     #     - 10.10.0.0/16
     #   auto_assign: true
   layer2:
-    - primary
+    - primary 
   # layer3:
   #   defaults:
   #     peer_port: 179
@@ -271,13 +268,14 @@ krew_root_dir: "/usr/local/krew"
 
 # Kube VIP
 kube_vip_enabled: true 
-kube_vip_arp_enabled: true
+kube_vip_arp_enabled: true 
+kube_vip_lb_enable: true
 kube_vip_controlplane_enabled: true
-kube_vip_address: ${apiserverIp}  # This becomes the VIP
+kube_vip_address: ${apiserverPublicIp}  # This becomes the VIP
 loadbalancer_apiserver:
   address: "{{ kube_vip_address }}"
   port: 6443
-kube_vip_interface: eth0
+# kube_vip_interface: eth0
 # kube_vip_services_enabled: false
 # kube_vip_dns_mode: first
 # kube_vip_cp_detect: false

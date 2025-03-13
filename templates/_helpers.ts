@@ -159,11 +159,11 @@ const sortNodes = (a: Node, b: Node) => {
   return a.name.localeCompare(b.name);
 };
 
-const Nodes = instances.map(transformToNode).sort(sortNodes);
+export const nodes = instances.map(transformToNode).sort(sortNodes);
 
-export const controlPlanes = Nodes.filter((node) => node.roles.includes("control-plane"));
-export const etcds = Nodes.filter((node) => node.roles.includes("etcd"));
-export const workers = Nodes.filter((node) => node.roles.includes("worker"));
+export const controlPlanes = nodes.filter((node) => node.roles.includes("control-plane"));
+export const etcds = nodes.filter((node) => node.roles.includes("etcd"));
+export const workers = nodes.filter((node) => node.roles.includes("worker"));
 
 if (controlPlanes.length === 0) {
   throw new Error("No control-plane nodes found");
@@ -180,5 +180,8 @@ if (workers.length === 0) {
  * Changing or removing this node without proper procedure can cause the entire cluster to fail.
  * See README.md for more details on the proper procedure for replacing the first control plane node.
  */
-export const apiserverIp = controlPlanes[0].publicIp;
+// Use private IP for internal cluster communication (for kubeadm join operations)
+// Public IP is not accessible from inside the nodes
+export const apiserverPrivateIp = controlPlanes[0].privateIp;
+export const apiserverPublicIp = controlPlanes[0].publicIp;
 export const apiserverPort = 6443;
