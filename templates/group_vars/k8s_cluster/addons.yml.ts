@@ -215,8 +215,11 @@ metallb_config:
         value: ""
         effect: "NoSchedule"
   address_pools:
-    primary:
+    public:
       ip_range: ${publicIpRanges}
+      auto_assign: true
+    private:
+      ip_range: ${privateIpRanges}
       auto_assign: true
     # pool2:
     #   ip_range:
