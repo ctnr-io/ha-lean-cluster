@@ -10,9 +10,9 @@ const sh = String.raw;
 
 const [ca, clientCert, clientKey] = await Promise.all(
   [
-    exec(sh`ssh root@${apiserverIp} -i private.key -- "cat /etc/kubernetes/ssl/ca.crt"`),
-    exec(sh`ssh root@${apiserverIp} -i private.key -- "cat /etc/kubernetes/ssl/apiserver-kubelet-client.crt"`),
-    exec(sh`ssh root@${apiserverIp} -i private.key -- "cat /etc/kubernetes/ssl/apiserver-kubelet-client.key"`),
+    exec(sh`ssh root@${apiserverIp} -i ${domainName}-private.key -- "cat /etc/kubernetes/ssl/ca.crt"`),
+    exec(sh`ssh root@${apiserverIp} -i ${domainName}-private.key -- "cat /etc/kubernetes/ssl/apiserver-kubelet-client.crt"`),
+    exec(sh`ssh root@${apiserverIp} -i ${domainName}-private.key -- "cat /etc/kubernetes/ssl/apiserver-kubelet-client.key"`),
   ]
 )
   .then((res) => res.map(({ stdout }) => encodeBase64(stdout)))

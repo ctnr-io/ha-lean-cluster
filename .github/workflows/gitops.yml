@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Get private key from secrets
-        run: echo "${{ secrets.PRIVATE_KEY }}" > private.key
+        run: echo "${{ secrets.PRIVATE_KEY }}" > ${{ vars.DOMAIN_NAME }}-private.key
 
       - name: Get Contabo YAML from secrets && install cntb
         run: |

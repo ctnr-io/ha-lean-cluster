@@ -1,7 +1,7 @@
 get-input = $(shell read -p "$(1): " input; echo $$input)
 get-secret = $(shell read -s -p "$(1): " secret; echo $$secret; echo 1>&0)
 
-docker-run := docker run $(shell [ -t 0 ] && echo -it || echo -i)
+docker-run := docker run $(shell [ -t 0 ] && echo -it || echo -i) -e DOMAIN_NAME=${DOMAIN_NAME}
 
 .PHONY: build
 build:
@@ -9,25 +9,20 @@ build:
 
 .PHONY: install 
 apply: ## Apply the kubernetes cluster
-apply: generate private.key build
+apply: generate ${DOMAIN_NAME}-private.key build
 	${docker-run} -v .:/inventory kubespray cluster.yml
 
 .PHONY: reset
 reset: ## Reset the kubernetes cluster
-reset: generate private.key build
+reset: generate ${DOMAIN_NAME}-private.key build
 	${docker-run} -v .:/inventory kubespray reset.yml
 
-.PHONY: private.key
-private.key: .FORCE
+.PHONY: ${DOMAIN_NAME}-private.key
+${DOMAIN_NAME}-private.key: .FORCE
 	@chmod 400 $@
 
 .PHONY: .FORCE
 .FORCE:
-
-.PHONY: ssh
-ssh: ## SSH into the control plane node
-ssh: private.key
-	ssh -i private.key root@62.171.183.141
 
 .PHONY: login 
 login: ## Configure the provider credentials 
@@ -55,3 +50,8 @@ generate: .cntb .cntb/private-networks.json .cntb/instances.json
 .cntb/instances.json: .FORCE
 	@cntb get instances --output json > .cntb/instances.json
 
+.PHONY: list-nodes
+list-nodes: ## List all nodes in the cluster
+list-nodes: generate
+	@echo "Nodes:"
+	@cat .cntb/instances.json | jq -r '.[] | .displayName' | grep '^${DOMAIN_NAME}-'
