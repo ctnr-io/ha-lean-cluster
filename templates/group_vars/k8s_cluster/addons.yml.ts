@@ -4,7 +4,7 @@ import { privateNetworks } from '../../_helpers.ts'
 const yaml = String.raw
 
 const privateIpRanges = '[' + privateNetworks.map(pn => pn.cidr).join(", ") + ']'
-const publicIpRanges = '[' + nodes.map(node => node.publicIp).join(", ") + ']'
+const publicIpRanges = '[' + nodes.map(node => `${node.publicIp}/32`).join(", ") + ']'
 
 export default yaml`
 ---
@@ -216,7 +216,7 @@ metallb_config:
         effect: "NoSchedule"
   address_pools:
     primary:
-      ip_range: ${'[' + nodes.map(node => node.publicIp).join(", ") + ']'}
+      ip_range: ${publicIpRanges}
       auto_assign: true
     # pool2:
     #   ip_range:

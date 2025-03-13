@@ -34,10 +34,10 @@ login: ${HOME}/.cntb.yaml
 	@echo "Logged in"
 ${HOME}/.cntb.yaml:
 	@cntb config set-credentials \
-		--oauth2-clientid=$(oauth2-clientid) \
-		--oauth2-client-secret=$(oauth2-client-secret) \
-		--oauth2-user=$(oauth2-user) \
-		--oauth2-password=$(oauth2-password)
+		--oauth2-clientid='${oauth2-clientid}' \
+		--oauth2-client-secret='${oauth2-client-secret}' \
+		--oauth2-user='${oauth2-user}' \
+		--oauth2-password='${oauth2-password}'
 
 .PHONY: generate
 generate: ## Generate the ansible inventory
