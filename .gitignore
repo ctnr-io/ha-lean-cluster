@@ -19,7 +19,7 @@ __pycache__
 .vscode	
 
 # Kubespray
-private.key
+*.key
 credentials
 
 # CNTB

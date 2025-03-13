@@ -33,10 +33,10 @@ type ContaboInstance = (typeof instances)[number];
  * ⚠️ IMPORTANT: DO NOT change the first control plane node (<domain-name>-control-plane-0) without understanding 
  * the implications! See README.md for more details.
  */
-const NodeRoles = ["control-plane", "etcd", "worker"] as const;
-type NodeRoles = (typeof NodeRoles)[number][];
+export const NodeRoles = ["control-plane", "etcd", "worker"] as const;
+export type NodeRoles = (typeof NodeRoles)[number][];
 
-type Node = {
+export type Node = {
   name: string;
   publicIp: string;
   privateIp: string;
@@ -123,18 +123,6 @@ const transformToNode = (instance: ContaboInstance): Node => {
     roles: roles,
     index: primaryRole ? getNodeIndex(instance, primaryRole) : undefined,
   };
-};
-
-/**
- * Transform a Node object to a string representation for the inventory.ini file.
- * Includes the node index in the comment if available.
- * 
- * @param node The Node object
- * @returns String representation for inventory.ini
- */
-export const transformNodeToString = (node: Node): string => {
-  const indexStr = node.index !== undefined ? ` index=${node.index}` : '';
-  return `${node.name}\tansible_host=${node.publicIp}\tip=${node.privateIp}\t# roles=${node.roles.join(",")}${indexStr}`;
 };
 
 /**
