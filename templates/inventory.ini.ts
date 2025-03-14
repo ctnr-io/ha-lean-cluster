@@ -13,7 +13,8 @@ const transformNodeToString = (node: Node): string => {
 	return [
 		node.name,
 		`ansible_host=${node.publicIp}`,
-		`ip=${node.privateIp}`,
+		`access_ip=${node.privateIp}`,
+		`ip=${node.publicIp}`,
 		node.roles.includes("etcd") ? `etcd_member_name=${node.name}` : '',
 		[
 			'#',
