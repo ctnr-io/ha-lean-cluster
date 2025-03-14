@@ -270,7 +270,7 @@ krew_enabled: false
 krew_root_dir: "/usr/local/krew"
 
 # Kube VIP
-kube_vip_enabled: true 
+kube_vip_enabled: true
 kube_vip_arp_enabled: true 
 kube_vip_lb_enable: true
 kube_vip_controlplane_enabled: true
