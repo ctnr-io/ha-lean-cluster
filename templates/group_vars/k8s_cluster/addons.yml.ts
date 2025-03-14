@@ -1,10 +1,10 @@
-import { apiserverPrivateIp, apiserverPublicIp, nodes } from '../../_helpers.ts';
-import { privateNetworks } from '../../_helpers.ts'
+import { apiserverPrivateIp, apiserverPublicIp, nodes } from "../../_helpers.ts";
+import { privateNetworks } from "../../_helpers.ts";
 
-const yaml = String.raw
+const yaml = String.raw;
 
-const privateIpRanges = '[' + privateNetworks.map(pn => pn.cidr).join(", ") + ']'
-const publicIpRanges = '[' + nodes.map(node => `${node.publicIp}/32`).join(", ") + ']'
+const privateIpRanges = "[" + privateNetworks.map((pn) => pn.cidr).join(", ") + "]";
+const publicIpRanges = "[" + nodes.map((node) => `${node.publicIp}/32`).join(", ") + "]";
 
 export default yaml`
 ---
@@ -214,6 +214,8 @@ metallb_config:
         operator: "Equal"
         value: ""
         effect: "NoSchedule"
+  # To use specific pool for services, you can annotate the service with the following annotation:
+  # metallb.universe.tf/address-pool
   address_pools:
     public:
       ip_range: ${publicIpRanges}
@@ -221,12 +223,10 @@ metallb_config:
     private:
       ip_range: ${privateIpRanges}
       auto_assign: true
-    # pool2:
-    #   ip_range:
-    #     - 10.10.0.0/16
-    #   auto_assign: true
+  # Contabo cannot use BGP, so we use Layer 2 mode
   layer2:
-    - primary 
+    - public
+    - private 
   # layer3:
   #   defaults:
   #     peer_port: 179
@@ -293,4 +293,4 @@ node_feature_discovery_enabled: false
 # node_feature_discovery_worker_sa_create: false
 # node_feature_discovery_master_config:
 #   extraLabelNs: ["nvidia.com"]
-`
+`;
