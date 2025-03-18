@@ -41,7 +41,7 @@ jobs:
         run: make apply 1>/dev/null 2>/dev/null 
 
       - name: Tests changes
-        run: make test
+        run: make test 1>/dev/null 2>/dev/null
 
       - name: Bump version and push tag
         id: tag_version

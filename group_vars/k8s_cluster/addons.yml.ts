@@ -192,8 +192,8 @@ metallb_enabled: true
 metallb_speaker_enabled: "{{ metallb_enabled }}"
 metallb_namespace: "metallb-system"
 metallb_version: v0.13.9
-# If your VPS provider does not support BGP (like Contabo), you should use MetalLB in Layer 2 mode, which relies on ARP/NDP for IP assignment
-metallb_protocol: "layer2"
+# Using BGP Layer 3 mode to prevent node elected bottleneck and distribute traffic more efficiently
+metallb_protocol: "layer3"
 metallb_port: "7472"
 metallb_memberlist_port: "7946"
 metallb_config:
@@ -225,34 +225,37 @@ metallb_config:
     # external:
     #   ip_range: ${externalIpRanges}
     #   auto_assign: true
-  layer2:
-    # internal ip is for all services, external ip is for ingresses like nginx ingress controller
-    - internal 
-    # - external 
-  # layer3:
-  #   defaults:
-  #     peer_port: 179
-  #     hold_time: 120s
-  #   communities:
-  #     vpn-only: "1234:1"
-  #     NO_ADVERTISE: "65535:65282"
-  #   metallb_peers:
-  #       peer1:
-  #         peer_address: 10.6.0.1
-  #         peer_asn: 64512
-  #         my_asn: 4200000000
-  #         communities:
-  #           - vpn-only
-  #         address_pool:
-  #           - pool1
-  #       peer2:
-  #         peer_address: 10.10.0.1
-  #         peer_asn: 64513
-  #         my_asn: 4200000000
-  #         communities:
-  #           - NO_ADVERTISE
-  #         address_pool:
-  #           - pool2
+  # layer2:
+  #   # internal ip is for all services, external ip is for ingresses like nginx ingress controller
+  #   - internal 
+  #   # - external 
+  layer3:
+    defaults:
+      peer_port: 179
+      hold_time: 120s
+    communities:
+      # internal-only: Routes with this community are only advertised within the internal network
+      # Useful for services that should only be accessible within your cluster or private network
+      internal-only: "65535:65281"
+      # no-external-advertise: Custom community that prevents routes from being advertised to external BGP peers
+      # Useful for completely restricting the advertisement of certain service IPs
+      no-external-advertise: "65535:65282"
+    metallb_peers:
+      # Configure BGP peers for each worker node to distribute traffic
+      # Each worker node becomes a BGP peer, allowing for more efficient traffic distribution
+      # This prevents the node elected bottleneck issue that occurs in Layer 2 mode
+      # With BGP, each node can announce service IPs for pods running on that node
+      ${workers
+        .map(
+          (worker) => yaml`
+              ${worker.name}:
+                peer_address: ${worker.privateIp}
+                peer_asn: 64512
+                my_asn: 4200000000
+                address_pool:
+                  - internal
+        `)
+        .join("\n")}
 
 argocd_enabled: false
 # argocd_version: v2.11.0

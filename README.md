@@ -37,7 +37,7 @@ A High Availability, frugal Kubernetes cluster using [Kubespray](https://github.
 
 - **Kubernetes Core**: v1.31.4, containerd runtime, secret encryption at rest
 - **Networking**: Calico CNI, IPVS proxy mode with strict ARP, NodeLocal DNS cache
-- **High Availability**: MetalLB (Layer 2 mode), Kube-VIP (ARP mode), supplementary addresses in SSL keys
+- **High Availability**: MetalLB (BGP Layer 3 mode), Kube-VIP (ARP mode), supplementary addresses in SSL keys
 - **Enterprise Features**: Gateway API CRDs, secure communication
 
 ## Quick Start
@@ -104,4 +104,3 @@ Email: contact@ctnr.io
 ## License
 
 MIT License - see [LICENSE](LICENSE) file
-
