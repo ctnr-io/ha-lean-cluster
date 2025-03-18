@@ -114,7 +114,7 @@ ingress_nginx_enabled: true
 ingress_nginx_host_network: false
 ingress_nginx_service_type: LoadBalancer
 ingress_nginx_service_annotations:
-  metallb.universe.tf/address-pool: external 
+  metallb.universe.tf/address-pool: internal
   # example.io/loadbalancerIPs: 1.2.3.4
 # ingress_nginx_service_nodeport_http: 30080
 # ingress_nginx_service_nodeport_https: 30081
@@ -222,13 +222,13 @@ metallb_config:
     internal:
       ip_range: ${internalIpRanges}
       auto_assign: true
-    external:
-      ip_range: ${externalIpRanges}
-      auto_assign: true
+    # external:
+    #   ip_range: ${externalIpRanges}
+    #   auto_assign: true
   layer2:
     # internal ip is for all services, external ip is for ingresses like nginx ingress controller
     - internal 
-    - external 
+    # - external 
   # layer3:
   #   defaults:
   #     peer_port: 179
