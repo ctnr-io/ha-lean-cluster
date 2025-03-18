@@ -1,7 +1,7 @@
 import * as process from "node:process";
 
-const { default: allInstances } = await import("../.cntb/instances.json", { with: { type: "json" } });
-const { default: allPrivateNetworks } = await import("../.cntb/private-networks.json", { with: { type: "json" } });
+const { default: allInstances } = await import("./.cntb/instances.json", { with: { type: "json" } });
+const { default: allPrivateNetworks } = await import("./.cntb/private-networks.json", { with: { type: "json" } });
 
 export const domainName = process.env.DOMAIN_NAME;
 if (!domainName) {

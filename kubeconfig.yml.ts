@@ -1,4 +1,4 @@
-import { apiserverPublicIp, apiserverPort, domainName } from "./_helpers.ts";
+import { apiserverPublicIp, apiserverPort, domainName } from "./helpers.ts";
 import * as util from "node:util";
 import * as childProcess from "node:child_process";
 import { encodeBase64 } from "jsr:@std/encoding/base64";

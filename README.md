@@ -57,7 +57,7 @@ make apply
 
 ## Configuration & Node Naming
 
-- **Core Files**: `templates/inventory.ini.ts`, `templates/group_vars/k8s_cluster/k8s-cluster.yml.ts`, `templates/group_vars/k8s_cluster/addons.yml.ts`
+- **Core Files**: `inventory.ini.ts`, `kubeconfig.yml.ts`, `group_vars/k8s_cluster/k8s-cluster.yml.ts`, `group_vars/k8s_cluster/addons.yml.ts`
 - **Node Naming**: Each node name must start with the domain name prefix (`ctnr.io-`) followed by the role:
   - Control Plane: `<domain-name>-control-plane-X[-etcd][-worker]`
   - ETCD: `<domain-name>-etcd-X`
@@ -74,9 +74,19 @@ The first control plane node is critical for cluster stability. Modifying or rem
 2. Apply the configuration
 3. Only then remove the original control plane node
 
+## Testing
+
+The project includes automated tests to verify that key components are working correctly:
+
+- **Ingress Testing**: Tests that the Nginx ingress controller is properly configured and can route traffic to services
+  - Run with: `make test-ingress` or `deno test -A tests/ingress_test.ts`
+  - The test creates a test namespace, deployment, service, and ingress with a custom domain name
+  - It verifies connectivity using host-based routing with the domain name from your configuration
+  - Test fixtures are located in `tests/fixtures/` directory
+
 ## Next Steps & Roadmap
 
-- **Next**: Validate deployment, implement volume provisioning, configure auto-scaling, deploy workloads, add monitoring
+- **Next**: Implement volume provisioning, configure auto-scaling, deploy workloads, add monitoring
 - **Roadmap**: Automated provisioning, one-click deployment, backup solution, multi-region support, performance benchmarks
 
 ## Professional Support
@@ -94,3 +104,4 @@ Email: contact@ctnr.io
 ## License
 
 MIT License - see [LICENSE](LICENSE) file
+

@@ -3,11 +3,13 @@ get-secret = $(shell read -s -p "$(1): " secret; echo $$secret; echo 1>&0)
 
 docker-run := docker run $(shell [ -t 0 ] && echo -it || echo -i) -e DOMAIN_NAME=${DOMAIN_NAME}
 
+export DOMAIN_NAME ?= ${domain}
+
 .PHONY: build
 build:
 	docker build -t kubespray -f Dockerfile .
 
-.PHONY: install 
+.PHONY: apply 
 apply: ## Apply the kubernetes cluster
 apply: generate ${DOMAIN_NAME}-private.key build
 	${docker-run} -v .:/inventory kubespray cluster.yml
@@ -42,12 +44,12 @@ ${HOME}/.cntb.yaml:
 .PHONY: generate
 generate: ## Generate the ansible inventory
 generate: .cntb .cntb/private-networks.json .cntb/instances.json
-	@deno -A ./templates/_generate.ts
+	@deno -A ./generate.ts
 .cntb:
 	@mkdir -p .cntb
-.cntb/private-networks.json: .FORCE
+.cntb/private-networks.json:
 	@cntb get privateNetworks --output json > .cntb/private-networks.json
-.cntb/instances.json: .FORCE
+.cntb/instances.json:
 	@cntb get instances --output json > .cntb/instances.json
 
 .PHONY: list-nodes
@@ -55,3 +57,9 @@ list-nodes: ## List all nodes in the cluster
 list-nodes: generate
 	@echo "Nodes:"
 	@cat .cntb/instances.json | jq -r '.[] | .displayName' | grep '^${DOMAIN_NAME}-'
+
+.PHONY: test
+test: ## Test basic cluster functionalities
+test: generate
+	@echo "Test basic cluster functionalities..."
+	@deno test -A

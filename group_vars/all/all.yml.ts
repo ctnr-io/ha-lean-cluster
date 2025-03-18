@@ -1,4 +1,4 @@
-import { apiserverPort } from "../../_helpers.ts";
+import { apiserverPort } from "../../helpers.ts";
 
 const yaml = String.raw
 

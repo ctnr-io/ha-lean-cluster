@@ -1,10 +1,10 @@
-import { apiserverPrivateIp, apiserverPublicIp, nodes } from "../../_helpers.ts";
-import { privateNetworks } from "../../_helpers.ts";
+import { apiserverPrivateIp, workers } from "../../helpers.ts";
+import { privateNetworks } from "../../helpers.ts";
 
 const yaml = String.raw;
 
-const privateIpRanges = "[" + privateNetworks.map((pn) => pn.cidr).join(", ") + "]";
-const publicIpRanges = "[" + nodes.map((node) => `${node.publicIp}/32`).join(", ") + "]";
+const internalIpRanges = "[" + privateNetworks.map((pn) => pn.cidr).join(", ") + "]";
+const externalIpRanges = "[" + workers.map((node) => `${node.publicIp}/32`).join(", ") + "]";
 
 export default yaml`
 ---
@@ -16,13 +16,13 @@ export default yaml`
 helm_enabled: false
 
 # Registry deployment
-registry_enabled: false
+registry_enabled: false 
 # registry_namespace: kube-system
 # registry_storage_class: ""
 # registry_disk_size: "10Gi"
 
 # Metrics Server deployment
-metrics_server_enabled: false
+metrics_server_enabled: true 
 # metrics_server_container_port: 10250
 # metrics_server_kubelet_insecure_tls: true
 # metrics_server_metric_resolution: 15s
@@ -31,7 +31,7 @@ metrics_server_enabled: false
 # metrics_server_replicas: 1
 
 # Rancher Local Path Provisioner
-local_path_provisioner_enabled: false
+local_path_provisioner_enabled: true 
 # local_path_provisioner_namespace: "local-path-storage"
 # local_path_provisioner_storage_class: "local-path"
 # local_path_provisioner_reclaim_policy: Delete
@@ -43,7 +43,7 @@ local_path_provisioner_enabled: false
 # local_path_provisioner_helper_image_tag: "latest"
 
 # Local volume provisioner deployment
-local_volume_provisioner_enabled: false
+local_volume_provisioner_enabled: true 
 # local_volume_provisioner_namespace: kube-system
 # local_volume_provisioner_nodelabels:
 #   - kubernetes.io/hostname
@@ -110,21 +110,23 @@ gateway_api_enabled: true
 # gateway_api_experimental_channel: false
 
 # Nginx ingress controller deployment
-ingress_nginx_enabled: false
-# ingress_nginx_host_network: false
-# ingress_nginx_service_type: LoadBalancer
-# ingress_nginx_service_annotations:
-#   example.io/loadbalancerIPs: 1.2.3.4
+ingress_nginx_enabled: true 
+ingress_nginx_host_network: false
+ingress_nginx_service_type: LoadBalancer
+ingress_nginx_service_annotations:
+  metallb.universe.tf/address-pool: external 
+  # example.io/loadbalancerIPs: 1.2.3.4
 # ingress_nginx_service_nodeport_http: 30080
 # ingress_nginx_service_nodeport_https: 30081
 ingress_publish_status_address: ""
 # ingress_nginx_nodeselector:
 #   kubernetes.io/os: "linux"
-# ingress_nginx_tolerations:
-#   - key: "node-role.kubernetes.io/control-plane"
-#     operator: "Equal"
-#     value: ""
-#     effect: "NoSchedule"
+# Permit ingress traffic from control plane nodes
+ingress_nginx_tolerations:
+  - key: "node-role.kubernetes.io/control-plane"
+    operator: "Equal"
+    value: ""
+    effect: "NoSchedule"
 # ingress_nginx_namespace: "ingress-nginx"
 # ingress_nginx_insecure_port: 80
 # ingress_nginx_secure_port: 443
@@ -217,16 +219,16 @@ metallb_config:
   # To use specific pool for services, you can annotate the service with the following annotation:
   # metallb.universe.tf/address-pool
   address_pools:
-    public:
-      ip_range: ${publicIpRanges}
+    internal:
+      ip_range: ${internalIpRanges}
       auto_assign: true
-    private:
-      ip_range: ${privateIpRanges}
+    external:
+      ip_range: ${externalIpRanges}
       auto_assign: true
-  # Contabo cannot use BGP, so we use Layer 2 mode
   layer2:
-    - public
-    - private 
+    # internal ip is for all services, external ip is for ingresses like nginx ingress controller
+    - internal 
+    - external 
   # layer3:
   #   defaults:
   #     peer_port: 179
@@ -270,11 +272,11 @@ krew_enabled: false
 krew_root_dir: "/usr/local/krew"
 
 # Kube VIP
-kube_vip_enabled: true
-kube_vip_arp_enabled: true 
-kube_vip_lb_enable: true
+kube_vip_enabled: true 
+kube_vip_arp_enabled: true
+kube_vip_lb_enable: false 
 kube_vip_controlplane_enabled: true
-kube_vip_address: ${apiserverPublicIp}  # This becomes the VIP
+kube_vip_address: ${apiserverPrivateIp}  # This becomes the VIP
 loadbalancer_apiserver:
   address: "{{ kube_vip_address }}"
   port: 6443
@@ -283,10 +285,10 @@ loadbalancer_apiserver:
 # kube_vip_dns_mode: first
 # kube_vip_cp_detect: false
 # kube_vip_leasename: plndr-cp-lock
-# kube_vip_enable_node_labeling: false
+kube_vip_enable_node_labeling: true 
 
 # Node Feature Discovery
-node_feature_discovery_enabled: false
+node_feature_discovery_enabled: true 
 # node_feature_discovery_gc_sa_name: node-feature-discovery
 # node_feature_discovery_gc_sa_create: false
 # node_feature_discovery_worker_sa_name: node-feature-discovery

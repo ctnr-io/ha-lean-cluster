@@ -1,4 +1,4 @@
-import { controlPlanes, etcds, Node, workers } from "./_helpers.ts";
+import { controlPlanes, etcds, Node, workers } from "./helpers.ts";
 
 const ini = String.raw;
 
