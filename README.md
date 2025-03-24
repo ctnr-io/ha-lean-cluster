@@ -40,6 +40,59 @@ A High Availability, frugal Kubernetes cluster using [Kubespray](https://github.
 - **High Availability**: MetalLB (BGP Layer 3 mode), Kube-VIP (ARP mode), supplementary addresses in SSL keys
 - **Enterprise Features**: Gateway API CRDs, secure communication
 
+## MetalLB BGP Layer 3 Architecture
+
+MetalLB in BGP Layer 3 mode prevents node elected bottleneck by distributing traffic more efficiently:
+
+```mermaid
+graph TD
+    subgraph "Layer 2 Mode - Single Node Bottleneck"
+        Client1[Client] --> Router1[Router]
+        Router1 --> Node1L2[Node 1 - Elected Leader]
+        Node1L2 --> Pod1L2[Pod 1]
+        Node1L2 --> |Redirect| Pod2L2[Pod 2]
+        Node1L2 --> |Redirect| Pod3L2[Pod 3]
+        
+        style Node1L2 fill:#f96,stroke:#333
+        style Router1 fill:#69f,stroke:#333
+    end
+    
+    subgraph "BGP Layer 3 Mode - Distributed Traffic"
+        Client2[Client] --> Router2[Router with BGP]
+        Router2 --> |Direct Path| Node1L3[Node 1]
+        Router2 --> |Direct Path| Node2L3[Node 2]
+        Router2 --> |Direct Path| Node3L3[Node 3]
+        Node1L3 --> Pod1L3[Pod 1]
+        Node2L3 --> Pod2L3[Pod 2]
+        Node3L3 --> Pod3L3[Pod 3]
+        
+        style Router2 fill:#69f,stroke:#333
+    end
+    
+    classDef node fill:#6a6,stroke:#333
+    classDef pod fill:#fc9,stroke:#333
+    classDef client fill:#ccc,stroke:#333
+    
+    class Node1L3,Node2L3,Node3L3 node
+    class Pod1L2,Pod2L2,Pod3L2,Pod1L3,Pod2L3,Pod3L3 pod
+    class Client1,Client2 client
+```
+
+### Key Differences:
+
+1. **Layer 2 Mode (ARP/NDP)**:
+   - Single node elected as leader for each service IP
+   - All traffic flows through the elected node
+   - Creates bottleneck and single point of failure
+   - Requires additional network hops for pods on other nodes
+
+2. **Layer 3 Mode (BGP)**:
+   - Each node announces routes for pods running on that node
+   - Traffic is routed directly to the node hosting the pod
+   - Eliminates bottleneck by distributing traffic
+   - Improves fault tolerance and scalability
+   - More efficient network utilization
+
 ## Quick Start
 
 ```bash
