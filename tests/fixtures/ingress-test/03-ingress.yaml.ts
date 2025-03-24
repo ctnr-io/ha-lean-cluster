@@ -1,4 +1,4 @@
-import { ingressTestHost  } from "../ingress_test.ts"
+import { ingressTestHost  } from "../../ingress_test.ts"
 
 const yaml = String.raw;
 

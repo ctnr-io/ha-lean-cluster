@@ -16,7 +16,7 @@ export const ingressTestHost = `ingress-test.${domainName}`;
 
 // Constants
 const NAMESPACE = "ingress-test";
-const FIXTURES_DIR = "./tests/fixtures";
+const FIXTURES_DIR = "./tests/fixtures/ingress-test";
 const TIMEOUT_MS = 120000; // 2 minutes
 
 // Types

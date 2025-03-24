@@ -19,6 +19,14 @@ jobs:
         DOMAIN_NAME: ${{ vars.DOMAIN_NAME }}
     permissions: 
       contents: write
+    # strategy:
+    #   matrix:
+    #     envionment:
+    #       - 0.eu.cntb.hacl.ctnr.io
+    #       - 1.eu.cntb.hacl.ctnr.io
+    #       - 2.eu.cntb.hacl.ctnr.io
+    #   max-parallel: 1
+    #   fail-fast: false
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -38,10 +46,10 @@ jobs:
 
       - name: Apply changes
         # Hide logs for public repositories
-        run: make apply 1>/dev/null 2>/dev/null 
+        run: make apply # 1>/dev/null
 
       - name: Tests changes
-        run: make test 1>/dev/null 2>/dev/null
+        run: make test # 1>/dev/null
 
       - name: Bump version and push tag
         id: tag_version

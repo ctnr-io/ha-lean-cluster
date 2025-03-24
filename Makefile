@@ -1,9 +1,9 @@
 get-input = $(shell read -p "$(1): " input; echo $$input)
 get-secret = $(shell read -s -p "$(1): " secret; echo $$secret; echo 1>&0)
 
-docker-run := docker run $(shell [ -t 0 ] && echo -it || echo -i) -e DOMAIN_NAME=${DOMAIN_NAME}
-
 export DOMAIN_NAME ?= ${domain}
+
+docker-run := docker run $(shell [ -t 0 ] && echo -it || echo -i) -e DOMAIN_NAME=${DOMAIN_NAME}
 
 .PHONY: build
 build:
@@ -12,7 +12,13 @@ build:
 .PHONY: apply 
 apply: ## Apply the kubernetes cluster
 apply: generate ${DOMAIN_NAME}-private.key build
+	${docker-run} -v .:/inventory kubespray upgrade-cluster.yml
+
+.PHONY: install 
+install: ## Install the kubernetes cluster
+install: generate ${DOMAIN_NAME}-private.key build
 	${docker-run} -v .:/inventory kubespray cluster.yml
+	@make generate # Regenerate kubeconfig.yml
 
 .PHONY: reset
 reset: ## Reset the kubernetes cluster
