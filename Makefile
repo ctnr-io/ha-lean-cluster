@@ -12,13 +12,7 @@ build:
 .PHONY: apply 
 apply: ## Apply the kubernetes cluster
 apply: generate ${DOMAIN_NAME}-private.key build
-	${docker-run} -v .:/inventory kubespray upgrade-cluster.yml
-
-.PHONY: install 
-install: ## Install the kubernetes cluster
-install: generate ${DOMAIN_NAME}-private.key build
 	${docker-run} -v .:/inventory kubespray cluster.yml
-	@make generate # Regenerate kubeconfig.yml
 
 .PHONY: reset
 reset: ## Reset the kubernetes cluster

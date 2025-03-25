@@ -22,9 +22,9 @@ jobs:
     # strategy:
     #   matrix:
     #     envionment:
-    #       - 0.eu.cntb.hacl.ctnr.io
-    #       - 1.eu.cntb.hacl.ctnr.io
-    #       - 2.eu.cntb.hacl.ctnr.io
+    #       - 0.eu.cntb.hacl.${{ vars.DOMAIN_NAME }}
+    #       - 1.eu.cntb.hacl.${{ vars.DOMAIN_NAME }}
+    #       - 2.eu.cntb.hacl.${{ vars.DOMAIN_NAME }}
     #   max-parallel: 1
     #   fail-fast: false
     steps:
