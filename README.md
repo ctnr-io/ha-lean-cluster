@@ -1,6 +1,6 @@
 # High Availability but Lean Kubernetes Cluster
 
-A High Availability, frugal Kubernetes cluster using [Kubespray](https://github.com/kubernetes-sigs/kubespray) optimized for Contabo VPS. Deploy enterprise-grade Kubernetes at 1/10th the cost of managed solutions.
+A High Availability, frugal Kubernetes cluster using [kubeadm](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/) optimized for Contabo VPS. Deploy enterprise-grade Kubernetes at 1/10th the cost of managed solutions.
 
 ## Key Features
 
@@ -98,10 +98,48 @@ graph TD
 ```bash
 git clone https://github.com/ctnr.io/ha-lean-cluster.git
 cd ha-lean-cluster
-make login
-make generate
-make apply 
+deno run -A api/cli.ts createCluster --domainName=ctnr.io
 ```
+
+## API-Based Cluster Management
+
+This project uses a tRPC-based API for managing your Kubernetes cluster. You can interact with the API using the provided CLI tool:
+
+```bash
+# Create a new cluster based on available Contabo nodes
+deno run -A api/cli.ts createCluster --domainName=ctnr.io --k8sVersion=1.31.4 --cni=calico
+
+# Add a control plane node to the cluster
+deno run -A api/cli.ts addControlPlane --domainName=ctnr.io --nodeName=ctnr.io_control-plane-1
+
+# Add a worker node to the cluster
+deno run -A api/cli.ts addWorker --domainName=ctnr.io --nodeName=ctnr.io_worker-0
+
+# Add an etcd node to the cluster (requires manual configuration)
+deno run -A api/cli.ts addEtcd --domainName=ctnr.io --nodeName=ctnr.io_etcd-0
+
+# Remove a node from the cluster
+deno run -A api/cli.ts removeNode --domainName=ctnr.io --nodeName=ctnr.io_worker-0
+
+# Upgrade the Kubernetes cluster
+deno run -A api/cli.ts upgradeCluster --domainName=ctnr.io --version=1.32.0 --packageRevision=00
+
+# Reset the entire Kubernetes cluster
+deno run -A api/cli.ts resetCluster --domainName=ctnr.io --confirm=true
+
+# List all nodes in the cluster
+deno run -A api/cli.ts listNodes --domainName=ctnr.io
+
+# Get the kubeadm join command for adding new nodes
+deno run -A api/cli.ts getJoinCommand --domainName=ctnr.io
+```
+
+### API Features
+
+- **Automatic Node Provisioning**: When creating a cluster, the API checks for existing clusters with the same domain name and automatically claims available VPS instances.
+- **Type-Safe Operations**: All API operations are fully typed with input validation.
+- **Flexible Configuration**: Customize Kubernetes version, CNI, network CIDRs, and more.
+- **Error Handling**: Comprehensive error handling with detailed error messages.
 
 ## Hardware Requirements
 
@@ -110,20 +148,20 @@ make apply
 
 ## Configuration & Node Naming
 
-- **Core Files**: `inventory.ini.ts`, `kubeconfig.yml.ts`, `group_vars/k8s_cluster/k8s-cluster.yml.ts`, `group_vars/k8s_cluster/addons.yml.ts`
-- **Node Naming**: Each node name must start with the domain name prefix (`ctnr.io-`) followed by the role:
-  - Control Plane: `<domain-name>-control-plane-X[-etcd][-worker]`
-  - ETCD: `<domain-name>-etcd-X`
-  - Worker: `<domain-name>-worker-X[-etcd]`
-  - Examples: `<domain-name>-control-plane-0-etcd`, `<domain-name>-worker-0`, `<domain-name>-etcd-0`
+- **Core Files**: `kubeconfig.yml.ts`, `helpers.ts`
+- **Node Naming**: Each node name must start with the domain name prefix (`ctnr.io_`) followed by the role:
+  - Control Plane: `<domain-name>_control-plane-X[_etcd][_worker]`
+  - ETCD: `<domain-name>_etcd-X`
+  - Worker: `<domain-name>_worker-X[_etcd]`
+  - Examples: `<domain-name>_control-plane-0_etcd`, `<domain-name>_worker-0`, `<domain-name>_etcd-0`
 
 ### ⚠️ Important Warning
 
-**DO NOT change the first control plane node (<domain-name>-control-plane-0) without understanding the implications!**
+**DO NOT change the first control plane node (<domain-name>_control-plane-0) without understanding the implications!**
 
 The first control plane node is critical for cluster stability. Modifying or removing it incorrectly can cause the entire cluster to fail. If you need to replace the first control plane node, follow these steps:
 
-1. Rename your current nodes so that `<domain-name>-control-plane-1` becomes `<domain-name>-control-plane-0` and vice versa
+1. Rename your current nodes so that `<domain-name>_control-plane-1` becomes `<domain-name>_control-plane-0` and vice versa
 2. Apply the configuration
 3. Only then remove the original control plane node
 
@@ -132,10 +170,14 @@ The first control plane node is critical for cluster stability. Modifying or rem
 The project includes automated tests to verify that key components are working correctly:
 
 - **Ingress Testing**: Tests that the Nginx ingress controller is properly configured and can route traffic to services
-  - Run with: `make test-ingress` or `deno test -A tests/ingress_test.ts`
+  - Run with: `deno test -A tests/ingress_test.ts`
   - The test creates a test namespace, deployment, service, and ingress with a custom domain name
   - It verifies connectivity using host-based routing with the domain name from your configuration
   - Test fixtures are located in `tests/fixtures/` directory
+
+- **ETCD Testing**: Tests that the etcd cluster is healthy and functioning correctly
+  - Run with: `deno test -A tests/etcd_test.ts`
+  - Verifies etcd cluster health, member list, alarms, and response time
 
 ## Next Steps & Roadmap
 

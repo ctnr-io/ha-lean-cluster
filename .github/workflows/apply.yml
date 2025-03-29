@@ -19,20 +19,16 @@ jobs:
         DOMAIN_NAME: ${{ vars.DOMAIN_NAME }}
     permissions: 
       contents: write
-    # strategy:
-    #   matrix:
-    #     envionment:
-    #       - 0.eu.cntb.hacl.${{ vars.DOMAIN_NAME }}
-    #       - 1.eu.cntb.hacl.${{ vars.DOMAIN_NAME }}
-    #       - 2.eu.cntb.hacl.${{ vars.DOMAIN_NAME }}
-    #   max-parallel: 1
-    #   fail-fast: false
     steps:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Get private key from secrets
-        run: echo "${{ secrets.PRIVATE_KEY }}" > ${{ vars.DOMAIN_NAME }}-private.key
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keygen -y -f ~/.ssh/id_rsa > ~/.ssh/id_rsa.pub
 
       - name: Get Contabo YAML from secrets && install cntb
         run: |
@@ -44,9 +40,9 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Apply changes
+      - name: Create or update cluster
         # Hide logs for public repositories
-        run: make apply # 1>/dev/null
+        run: make create-cluster # 1>/dev/null
 
       - name: Tests changes
         run: make test # 1>/dev/null

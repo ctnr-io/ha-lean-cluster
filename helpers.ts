@@ -8,8 +8,8 @@ if (!domainName) {
   throw new Error("DOMAIN_NAME environment variable is required");
 }
 
-export const instances = allInstances.filter((instance) => instance.displayName.startsWith(`${domainName}-`));
-export const privateNetworks = allPrivateNetworks.filter((network) => network.name.startsWith(`${domainName}-`));
+export const instances = allInstances.filter((instance) => instance.displayName.startsWith(`${domainName}_`));
+export const privateNetworks = allPrivateNetworks
 
 type ContaboInstance = (typeof instances)[number];
 
@@ -17,34 +17,34 @@ type ContaboInstance = (typeof instances)[number];
  * Node roles supported by the cluster
  * 
  * Naming convention for Contabo VPS instances:
- * Each node name should start with the domain name prefix (${domainName}-) followed by the role:
- * - Control Plane Nodes: <domain-name>-control-plane-X[-etcd][-worker] (where X is the index: 0, 1, 2, etc.)
- * - ETCD Nodes: <domain-name>-etcd-X (where X is the index: 0, 1, 2, etc.)
- * - Worker Nodes: <domain-name>-worker-X[-etcd] (where X is the index: 0, 1, 2, etc.)
+ * Each node name should start with the domain name prefix (${domainName}_) followed by the role:
+ * - Control Plane Nodes: <domain-name>_control-plane-X[_etcd][_worker] (where X is the index: 0, 1, 2, etc.)
+ * - ETCD Nodes: <domain-name>_etcd-X (where X is the index: 0, 1, 2, etc.)
+ * - Worker Nodes: <domain-name>_worker-X[_etcd] (where X is the index: 0, 1, 2, etc.)
  * 
  * Examples:
- * - <domain-name>-control-plane-0: A node that serves only as a control plane
- * - <domain-name>-control-plane-0-etcd: A node that serves as both control plane and etcd
- * - <domain-name>-control-plane-0-etcd-worker: A node that serves as control plane, etcd, and worker
- * - <domain-name>-etcd-0: A node that serves only as etcd
- * - <domain-name>-worker-0: A node that serves only as a worker
- * - <domain-name>-worker-0-etcd: A node that serves as both worker and etcd
+ * - <domain-name>_control-plane-0: A node that serves only as a control plane
+ * - <domain-name>_control-plane-0_etcd: A node that serves as both control plane and etcd
+ * - <domain-name>_control-plane-0_etcd_worker: A node that serves as control plane, etcd, and worker
+ * - <domain-name>_etcd-0: A node that serves only as etcd
+ * - <domain-name>_worker-0: A node that serves only as a worker
+ * - <domain-name>_worker-0_etcd: A node that serves as both worker and etcd
  * 
- * ⚠️ IMPORTANT: DO NOT change the first control plane node (<domain-name>-control-plane-0) without understanding 
+ * ⚠️ IMPORTANT: DO NOT change the first control plane node (<domain-name>_control-plane-0) without understanding 
  * the implications! See README.md for more details.
  */
 export const NodeRoles = ["control-plane", "etcd", "worker"] as const;
 export type NodeRoles = (typeof NodeRoles)[number][];
 
 export type Node = {
-  name: string;
+  id: string;
   publicIp: string;
   privateIp: string;
+  network: string;
   readonly roles: NodeRoles;
   /** Index of the node within its primary role (e.g., 0 for control-plane-0) */
   index?: number;
 };
-
 
 /**
  * Validate that each instances has the same private IPs in all private networks to facilitate node communication
@@ -74,9 +74,9 @@ const getPrivateIp = (instance: ContaboInstance): string => {
 /**
  * Extract node roles from the instance display name based on the naming convention.
  * The display name should follow the format:
- * - <domain-name>-control-plane-X[-etcd][-worker]
- * - <domain-name>-etcd-X
- * - <domain-name>-worker-X[-etcd]
+ * - <domain-name>_control-plane-X[_etcd][_worker]
+ * - <domain-name>_etcd-X
+ * - <domain-name>_worker-X[_etcd]
  * 
  * @param instance The Contabo instance
  * @returns Array of node roles
@@ -88,7 +88,7 @@ const getNodeRoles = (instance: ContaboInstance): NodeRoles => {
 
 /**
  * Extract the node index from the display name.
- * For example, from "<domain-name>-control-plane-0" it extracts 0.
+ * For example, from "<domain-name>_control-plane-0" it extracts 0.
  * 
  * @param instance The Contabo instance
  * @param role The primary role to extract index for
@@ -112,8 +112,8 @@ const transformToNode = (instance: ContaboInstance): Node => {
   const primaryRole = roles[0]; // First role is considered primary
   
   // Ensure the node name starts with the domain name prefix
-  if (!instance.displayName.startsWith(`${domainName}-`)) {
-    throw new Error(`Node name ${instance.name} does not start with the domain name prefix ${domainName}-`);
+  if (!instance.displayName.startsWith(`${domainName}_`)) {
+    throw new Error(`Node name ${instance.name} does not start with the domain name prefix ${domainName}_`);
   }
 
   return {
@@ -176,7 +176,7 @@ if (workers.length === 0) {
 }
 
 /**
- * ⚠️ IMPORTANT: The first control plane node (<domain-name>-control-plane-0) is used as the API server by default.
+ * ⚠️ IMPORTANT: The first control plane node (<domain-name>_control-plane-0) is used as the API server by default.
  * Changing or removing this node without proper procedure can cause the entire cluster to fail.
  * See README.md for more details on the proper procedure for replacing the first control plane node.
  */

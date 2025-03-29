@@ -29,8 +29,6 @@ async function sshCommand(node: (typeof etcds)[0], command: string): Promise<str
       "-o",
       "StrictHostKeyChecking=no",
       `root@${node.publicIp}`,
-      `-i`,
-      `${process.env.DOMAIN_NAME}-private.key`,
       command,
     ],
   });
@@ -49,9 +47,7 @@ async function sshCommand(node: (typeof etcds)[0], command: string): Promise<str
  */
 async function etcdctl(args: string[]): Promise<string> {
   const etcdNode = etcds[0];
-  const command = `ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379 --cacert=/etc/ssl/etcd/ssl/ca.pem --cert=/etc/ssl/etcd/ssl/member-${
-    etcdNode.name
-  }.pem --key=/etc/ssl/etcd/ssl/member-${etcdNode.name}-key.pem ${args.join(" ")}`;
+  const command = `ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379 --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --key=/etc/kubernetes/pki/etcd/server.key ${args.join(" ")}`;
 
   return await sshCommand(etcdNode, command);
 }

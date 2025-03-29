@@ -8,16 +8,20 @@ const exec = util.promisify(childProcess.exec);
 const yaml = String.raw;
 const sh = String.raw;
 
+console.log(domainName);
+
+// In kubeadm, the certificates are stored in different locations
 const [ca, clientCert, clientKey] = await Promise.all(
   [
-    exec(sh`ssh root@${apiserverPublicIp} -i ${domainName}-private.key -- "cat /etc/kubernetes/ssl/ca.crt"`),
-    exec(sh`ssh root@${apiserverPublicIp} -i ${domainName}-private.key -- "cat /etc/kubernetes/ssl/apiserver-kubelet-client.crt"`),
-    exec(sh`ssh root@${apiserverPublicIp} -i ${domainName}-private.key -- "cat /etc/kubernetes/ssl/apiserver-kubelet-client.key"`),
+    exec(sh`ssh root@${apiserverPublicIp} -o "StrictHostKeyChecking no" -- "cat /etc/kubernetes/pki/ca.crt"`),
+    exec(sh`ssh root@${apiserverPublicIp} -o "StrictHostKeyChecking no" -- "cat /etc/kubernetes/pki/apiserver-kubelet-client.crt"`),
+    exec(sh`ssh root@${apiserverPublicIp} -o "StrictHostKeyChecking no" -- "cat /etc/kubernetes/pki/apiserver-kubelet-client.key"`),
   ]
 )
   .then((res) => res.map(({ stdout }) => encodeBase64(stdout)))
-  .catch(() => {
+  .catch((error) => {
     console.warn("Regenerate kubeconfig after kubernetes cluster is up and running");
+    console.error("Error fetching certificates:", error);
     return ['', '', ''];
   });
 

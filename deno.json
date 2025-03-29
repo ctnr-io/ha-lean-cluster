@@ -1,0 +1,14 @@
+{
+  "tasks": {
+    "api": "deno run --watch api/trpc.ts",
+    "cli": "deno run -A api/cli.ts",
+    "test:api": "deno test -A --watch --unstable api"
+  },
+  "imports": {
+    "@std/assert": "jsr:@std/assert@^1.0.12",
+    "@std/testing": "jsr:@std/testing@^1.0.10",
+    "@trpc/server": "npm:@trpc/server@^11.0.0",
+    "trpc-cli": "npm:trpc-cli@^0.6.0-7",
+    "zod": "npm:zod@^3.24.2"
+  }
+}
