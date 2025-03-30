@@ -1,9 +1,11 @@
 import { hash, randomUUID } from "node:crypto";
-import { AddNodeOptions, InitClusterOptions, KubernetesAdministrator, UpgradeClusterOptions } from "./mod.ts";
+import { AddNodeOptions, CreateClusterOptions, KubernetesAdministrator, UpgradeClusterOptions } from "./mod.ts";
 import { Node, NodeProvisioner } from "../node-provisioners/mod.ts";
 import { executeSSH, sh } from "../utils.ts";
 
 export abstract class AbstractKubernetesAdministrator implements KubernetesAdministrator {
+  abstract upgradeCluster(clusterId: string, options: UpgradeClusterOptions): Promise<KubernetesAdministrator>;
+
   constructor(protected nodeProvisioner: NodeProvisioner) {}
 
   protected static generateClusterId(): string {
@@ -17,12 +19,7 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
    */
   protected abstract installDependencies(node: Node): Promise<void>;
 
-	/**
-	 * Upgrade the Kubernetes cluster to a the next available version
-	 */
-  abstract upgradeCluster(clusterId: string, options: UpgradeClusterOptions): Promise<void>;
-
-  async initCluster(options: InitClusterOptions): Promise<string> {
+  async createCluster(options: CreateClusterOptions): Promise<string> {
     const { cni = "calico", podCidr = "10.244.0.0/16", serviceCidr = "10.96.0.0/12" } = options;
 
 		const k8sVersion = this.getVersion();

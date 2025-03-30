@@ -23,7 +23,7 @@ export interface Cluster {
   updatedAt: Date;
 }
 
-export interface InitClusterOptions {
+export interface CreateClusterOptions {
   domainName: string;
   k8sVersion?: string;
   cni?: "calico" | "flannel";
@@ -48,11 +48,17 @@ export interface UpgradeClusterOptions {
 }
 
 export interface KubernetesAdministrator {
-  initCluster(options: InitClusterOptions): Promise<string>;
+  createCluster(options: CreateClusterOptions): Promise<string>;
   deleteCluster(clusterId: string): Promise<void>;
   addNode(options: AddNodeOptions): Promise<Node>;
   removeNode(clusterId: string, nodeId: string): Promise<void>;
-  upgradeCluster(clusterId: string, options: UpgradeClusterOptions): Promise<void>;
+  
+  /**
+	 * Upgrade the Kubernetes cluster to a the next available version
+   * @returns {KubernetesAdministrator} - The upgraded Kubernetes administrator instance
+   * @throws {Error} - If the upgrade fails or next version is not implemented
+	 */
+  upgradeCluster(clusterId: string, options: UpgradeClusterOptions): Promise<KubernetesAdministrator>;
 }
 
 export const createKubernetesAdministrator = (version: "1.32", nodeProvisioner: NodeProvisioner): KubernetesAdministrator => {
