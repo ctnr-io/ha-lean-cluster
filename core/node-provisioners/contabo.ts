@@ -49,15 +49,16 @@ export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
     const instance = await this.getAvailableInstance();
     if (instance) {
       // reinstall instance
-      return await this.provider.reinstallInstance({
+      const instanceId = await this.provider.reinstallInstance({
         instanceId: instance.instanceId,
         sshKeys,
-        displayName,
       });
+      await this.provider.setInstanceDisplayName(instanceId, displayName);
+      return instanceId;
     }
     if (mode === "auto") {
       // create instance
-      return await this.provider.createInstance(options);
+      return await this.provider.createInstance({ productId: "V78", sshKeys, displayName });
     }
     throw new Error(
       "Automatic provisioning disabled, no available instances found, please provision instances in Contabo first"
@@ -157,19 +158,19 @@ export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
       Number.parseInt(String(data.privateNetworkId)),
       Number.parseInt(String(data.instanceId)),
     ];
-    await Promise.all([
-      this.provider.unassignPrivateNetwork(privateNetworkId, instanceId),
-      this.provider.reinstallInstance({
+    await this.provider.unassignPrivateNetwork(privateNetworkId, instanceId).catch(() => {});
+    await this.provider
+      .reinstallInstance({
         instanceId,
-        displayName: "",
         sshKeys: [
           await this.ensureSshKey({
             name: process.env.DOMAIN_NAME,
             value: await readFile("private.key"),
           }),
         ],
-      }),
-    ]);
+      })
+      .catch(() => {});
+    await this.provider.setInstanceDisplayName(instanceId, "");
   }
 
   async listNodes(options: ListNodeOptions): Promise<Node[]> {
@@ -198,6 +199,6 @@ export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
       clusterId: data.clusterId,
       privateNetwork,
       instance,
-    })
+    });
   }
 }

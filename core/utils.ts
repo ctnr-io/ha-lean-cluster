@@ -1,15 +1,17 @@
 import * as util from "node:util";
 import * as childProcess from "node:child_process";
 import * as fs from "node:fs/promises";
-import { nodeRoles } from "../api/procedures/cluster.ts";
 
 export const NodeRoles = ["control-plane", "etcd", "worker"] as const;
 export type NodeRoles = (typeof NodeRoles)[number][];
-type NodeRole = typeof nodeRoles[number];
+type NodeRole = typeof NodeRoles[number];
 
 const _exec = util.promisify(childProcess.exec);
 
-export const sh = String.raw
+export const sh = (template: { raw: readonly string[] | ArrayLike<string>; }, ...substitutions: any[]): string => {
+  const str = String.raw(template, ...substitutions);
+  return str.replace(/[\\\n]/g, "").replace(/[\s\t]+/g, " ").trim();
+};
 export const yaml = String.raw
 
 /**
