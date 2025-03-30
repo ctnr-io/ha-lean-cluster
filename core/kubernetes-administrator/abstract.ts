@@ -1,58 +1,43 @@
-import { Node, NodeProvisioner, NodeRoles } from "../node-provisioners/index.ts";
-import { exec, executeSSH, sh } from "../utils.ts";
 import { hash, randomUUID } from "node:crypto";
+import { AddNodeOptions, InitClusterOptions, KubernetesAdministrator, UpgradeClusterOptions } from "./index.ts";
+import { Node, NodeProvisioner } from "../node-provisioners/index.ts";
+import { executeSSH, sh } from "../utils.ts";
 
-export interface ClusterContext<NodeProvisionerContext = unknown> {
-  nodeProvisioner: NodeProvisioner;
-  nodeProvisionerContext: NodeProvisionerContext;
-}
+export abstract class AbstractKubernetesAdministrator implements KubernetesAdministrator {
+  constructor(protected nodeProvisioner: NodeProvisioner) {}
 
-export interface Cluster {
-  id: string;
-  name: string;
-  domainName: string;
-  k8sVersion: string;
-  cni: "calico" | "flannel";
-  podCidr: string;
-  serviceCidr: string;
-  controlPlaneEndpoint: string;
-  nodes: Node[];
-  kubeconfig?: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
+  protected static generateClusterId(): string {
+    return hash("sha2", randomUUID(), "hex");
+  }
 
-export interface InitClusterOptions {
-  domainName: string;
-  k8sVersion?: string;
-  cni?: "calico" | "flannel";
-  podCidr?: string;
-  serviceCidr?: string;
-}
+  protected abstract getVersion(): "1.32"; // currently only 1.32 is supported
 
-export interface AddNodeOptions {
-  nodeProvisioner: NodeProvisioner;
-  clusterId: string;
-  roles: NodeRoles;
-}
+  /**
+   * Install kubeadm, kubelet, and kubectl dependencies on the given node
+   */
+  protected abstract installDependencies(node: Node): Promise<void>;
 
-function generateClusterId(): string {
-  return hash("sha2", randomUUID(), "hex");
-}
-
-export class KubernetesManager {
-  constructor(private nodeProvisioner: NodeProvisioner) {}
+	/**
+	 * Upgrade the Kubernetes cluster to a the next available version
+	 */
+  abstract upgradeCluster(clusterId: string, options: UpgradeClusterOptions): Promise<void>;
 
   async initCluster(options: InitClusterOptions): Promise<string> {
-    const { k8sVersion = "1.31.4", cni = "calico", podCidr = "10.244.0.0/16", serviceCidr = "10.96.0.0/12" } = options;
+    const { cni = "calico", podCidr = "10.244.0.0/16", serviceCidr = "10.96.0.0/12" } = options;
 
-    // Provision a control plane node
+		const k8sVersion = this.getVersion();
+
+    const clusterId = AbstractKubernetesAdministrator.generateClusterId();
+
     const controlPlaneNode = await this.nodeProvisioner.provisionNode({
       mode: "manual",
       region: "europe",
-      clusterId: generateClusterId(),
+      clusterId,
       roles: ["control-plane"],
     });
+
+		// Install kubeadm, kubelet, and kubectl dependencies
+    await this.installDependencies(controlPlaneNode);
 
     // Initialize the cluster with kubeadm
     await executeSSH(
@@ -77,9 +62,7 @@ export class KubernetesManager {
       );
     }
 
-    // const kubeconfig = await executeSSH(controlPlaneNode.publicIp, "cat /etc/kubernetes/admin.conf");
-
-    return controlPlaneNode.clusterId;
+    return clusterId;
   }
 
   async deleteCluster(clusterId: string): Promise<void> {
@@ -108,7 +91,7 @@ export class KubernetesManager {
   }
 
   async addNode(options: AddNodeOptions): Promise<Node> {
-    const { nodeProvisioner, clusterId, roles } = options;
+    const { clusterId, roles } = options;
 
     // Get all nodes
     const nodes = await this.nodeProvisioner.listNodes({
@@ -123,7 +106,7 @@ export class KubernetesManager {
     }
 
     // Provision a new node
-    const newNode = await nodeProvisioner.provisionNode({
+    const newNode = await this.nodeProvisioner.provisionNode({
       mode: "manual",
       region: "europe",
       clusterId: clusterId,
