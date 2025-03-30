@@ -12,7 +12,7 @@ import {
   claimAvailableVPS,
   assignRoleToVPS,
   resetContaboNode
-} from "../utils.ts";
+} from "../../core/utils.ts";
 
 export const cniOptions = ["calico", "flannel"] as const;
 export const nodeRoles = ["control-plane", "etcd", "worker"] as const;

@@ -1,4 +1,4 @@
-import { Node, NodeProvisioner, NodeRoles } from "../node-provisioners/index.ts";
+import { Node, NodeProvisioner, NodeRoles } from "../node-provisioners/mod.ts";
 import { executeSSH, sh } from "../utils.ts";
 import { hash, randomUUID } from "node:crypto";
 import { KubernetesAdministratorV1_32 } from "./v1_32.ts";

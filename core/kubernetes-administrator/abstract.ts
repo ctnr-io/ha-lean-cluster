@@ -1,6 +1,6 @@
 import { hash, randomUUID } from "node:crypto";
-import { AddNodeOptions, InitClusterOptions, KubernetesAdministrator, UpgradeClusterOptions } from "./index.ts";
-import { Node, NodeProvisioner } from "../node-provisioners/index.ts";
+import { AddNodeOptions, InitClusterOptions, KubernetesAdministrator, UpgradeClusterOptions } from "./mod.ts";
+import { Node, NodeProvisioner } from "../node-provisioners/mod.ts";
 import { executeSSH, sh } from "../utils.ts";
 
 export abstract class AbstractKubernetesAdministrator implements KubernetesAdministrator {

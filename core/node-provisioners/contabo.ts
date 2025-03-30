@@ -1,6 +1,6 @@
 import { readFile } from "../utils.ts";
 import * as process from "node:process";
-import { ListNodeOptions, Node, NodeRoles, ProvisionNodeOptions } from "./index.ts";
+import { ListNodeOptions, Node, NodeRoles, ProvisionNodeOptions } from "./mod.ts";
 import { AbstractNodeProvisioner } from "./abstract.ts";
 import { ContaboProvider, ContaboRegion, ContaboInstance, ContaboPrivateNetwork } from "../cloud-providers/contabo.ts";
 

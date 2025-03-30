@@ -1,7 +1,7 @@
-import { Node } from "../node-provisioners/index.ts";
+import { Node } from "../node-provisioners/mod.ts";
 import { executeSSH, sh } from "../utils.ts";
 import { AbstractKubernetesAdministrator } from "./abstract.ts";
-import { AddNodeOptions, InitClusterOptions, KubernetesAdministrator, UpgradeClusterOptions } from "./index.ts";
+import { AddNodeOptions, InitClusterOptions, KubernetesAdministrator, UpgradeClusterOptions } from "./mod.ts";
 
 export class KubernetesAdministratorV1_32 extends AbstractKubernetesAdministrator {
 	protected getVersion(): "1.32" {
