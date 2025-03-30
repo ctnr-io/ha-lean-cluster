@@ -29,7 +29,7 @@ export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
 
   async ensureSshKey(options: { name: string; value: string }): Promise<number> {
     const { name, value } = options;
-    const sshKeys = await this.provider.getSecrets({ type: "ssh", name });
+    const sshKeys = await this.provider.listSecrets({ type: "ssh", name });
     if (sshKeys.length === 0) {
       return await this.provider.createSecret({ type: "ssh", name, value });
     }
@@ -67,7 +67,7 @@ export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
 
   private static getRolesFromInstanceDisplayName(options: { clusterId: string; displayName: string }): NodeRoles {
     const { clusterId, displayName } = options;
-    return displayName.replace(new RegExp(`cluster-${clusterId}-.+-`), "").split("-") as NodeRoles;
+    return displayName.replace(new RegExp(`cluster_${clusterId}_.+_`), "").split("_") as NodeRoles;
   }
 
   private static transformPrivateNetworkInstanceToNode(options: {
@@ -124,7 +124,7 @@ export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
       });
       const instanceId = await this.ensureInstance({
         mode: "manual",
-        displayName: `cluster-${options.clusterId}-${region}-${roles.join("-")}`,
+        displayName: `cluster_${options.clusterId}_${region}_${roles.join("_")}`,
         sshKeys: [
           await this.ensureSshKey({
             name: process.env.DOMAIN_NAME,
@@ -174,7 +174,7 @@ export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
   }
 
   async listNodes(options: ListNodeOptions): Promise<Node[]> {
-    const privateNetworks = await this.provider.listPrivateNetworks({ name: `cluster-${options.clusterId}` });
+    const privateNetworks = await this.provider.listPrivateNetworks({ name: `cluster_${options.clusterId}` });
     return privateNetworks
       .map((privateNetwork) =>
         privateNetwork.instances.map((instance) => {
