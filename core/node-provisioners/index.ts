@@ -1,5 +1,3 @@
-import { ContaboContext } from "../cloud-providers/contabo.ts";
-
 export type NodeRoles = (typeof NodeRoles)[number][];
 export const NodeRoles = ["control-plane", "etcd", "worker"] as const;
 
@@ -35,12 +33,11 @@ export interface ListNodeOptions {
   clusterId: string;
 }
 
-export interface NodeProvisioner<Context = unknown> {
-  provisionNode: (ctx: Context, options: ProvisionNodeOptions) => Promise<Node>;
-  deprovisionNode: (ctx: Context, id: string) => Promise<void>;
-  listNodes: (ctx: Context, options: ListNodeOptions) => Promise<Node[]>;
+export interface NodeProvisioner {
+  provisionNode: (options: ProvisionNodeOptions) => Promise<Node>;
+  deprovisionNode: (id: string) => Promise<void>;
+  listNodes: (options: ListNodeOptions) => Promise<Node[]>;
+  getNode: (nodeId: string) => Promise<Node>;
 }
 
-export type NodeProvider = "contabo" | "linode";
-
-export const contabo = await import('./contabo.ts') satisfies NodeProvisioner<ContaboContext>;
+export type NodeProvider = "contabo";

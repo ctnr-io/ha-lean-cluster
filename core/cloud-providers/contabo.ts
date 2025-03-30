@@ -1,6 +1,6 @@
-import { exec, sh } from "../../api/utils.ts";
+import { exec as execUtil, sh } from "../utils.ts";
 
-export interface ContaboContext {
+export interface ContaboOauth {
   clientId: string;
   clientSecret: string;
   tokenUrl: string;
@@ -110,105 +110,74 @@ export interface ContaboPrivateNetwork {
   }[];
 }
 
-
 export type ContaboSshKey = ContaboSecret & { type: "ssh" };
 
-async function execCntb(ctx: ContaboContext, command: string): Promise<string> {
-  return exec(
-    [
-      command,
-      "--oauth2-client-secret",
-      ctx.clientSecret,
-      "--oauth2-clientid",
-      ctx.clientId,
-      "--oauth2-password",
-      ctx.password,
-      "--oauth2-tokenurl",
-      ctx.tokenUrl,
-      "--oauth2-user",
-      ctx.user,
-    ].join(" ")
-  );
-}
+export class ContaboProvider {
+  constructor(private oauth: ContaboOauth) {}
 
-export async function listInstances(ctx: ContaboContext, { page }: { page: number }): Promise<ContaboInstance[]> {
-  const instances = JSON.parse(await execCntb(ctx, "cntb get instances --output json")) as ContaboInstance[];
-  return instances;
-}
-
-export async function setInstanceDisplayName(
-  ctx: ContaboContext,
-  instanceId: number,
-  displayName: string
-): Promise<void> {
-  await execCntb(ctx, `cntb set instance "${instanceId}" --display-name "${displayName}"`);
-}
-
-export async function getAvailableInstance(ctx: ContaboContext): Promise<ContaboInstance | null> {
-  for (let page = 0; page < Infinity; page++) {
-    const instances = await listInstances(ctx, { page });
-    if (instances.length === 0) {
-      return null;
-    }
-    // find the first available instance
-    const availableInstance = instances.find(
-      (instance) => instance.displayName === "" && instance.status === "running"
+  private async exec(command: string): Promise<string> {
+    return execUtil(
+      [
+        command,
+        "--oauth2-client-secret",
+        this.oauth.clientSecret,
+        "--oauth2-clientid",
+        this.oauth.clientId,
+        "--oauth2-password",
+        this.oauth.password,
+        "--oauth2-tokenurl",
+        this.oauth.tokenUrl,
+        "--oauth2-user",
+        this.oauth.user,
+      ].join(" ")
     );
-    if (availableInstance) {
-      await setInstanceDisplayName(ctx, availableInstance.instanceId, "claimed");
-      return availableInstance;
+  }
+
+  async listInstances({ page }: { page: number }): Promise<ContaboInstance[]> {
+    const instances = JSON.parse(await this.exec("cntb get instances --output json")) as ContaboInstance[];
+    return instances;
+  }
+
+  async setInstanceDisplayName(instanceId: number, displayName: string): Promise<void> {
+    await this.exec(`cntb set instance "${instanceId}" --display-name "${displayName}"`);
+  }
+
+  async getSecrets(options?: { type?: "ssh" | "password"; name?: string }): Promise<ContaboSecret[]> {
+    const { type, name } = options ?? {};
+    return JSON.parse(
+      await this.exec(
+        ["cntb get secrets --output json", name && `--name ${name}`, type && `--type ${type}`].filter(Boolean).join(" ")
+      )
+    ) as ContaboSecret[];
+  }
+
+  async getSecret(id: string): Promise<ContaboSecret> {
+    try {
+      return JSON.parse(await this.exec(`cntb get secret --output json "${id}"`)) as ContaboSecret;
+    } catch (error) {
+      throw new Error(`Failed to retrieve secret`, { cause: error });
     }
   }
-  return null;
-}
 
-export async function getSecrets(
-  ctx: ContaboContext,
-  options?: { type?: "ssh" | "password"; name?: string }
-): Promise<ContaboSecret[]> {
-  const { type, name } = options ?? {};
-  return JSON.parse(
-    await execCntb(
-      ctx,
-      ["cntb get secrets --output json", name && `--name ${name}`, type && `--type ${type}`].filter(Boolean).join(" ")
-    )
-  ) as ContaboSecret[];
-}
-
-export async function getSecret(ctx: ContaboContext, id: string): Promise<ContaboSecret> {
-  try {
-    return JSON.parse(await execCntb(ctx, `cntb get secret --output json "${id}"`)) as ContaboSecret;
-  } catch (error: unknown) {
-    throw new Error(`Failed to retrieve secret`, { cause: error });
+  async createSecret(options: { type: "ssh" | "password"; name: string; value: string }): Promise<number> {
+    const { type, name, value } = options;
+    const secretId = await this.exec(`cntb create secret --type ${type} --name ${name} --value ${value}`);
+    return parseInt(secretId);
   }
-}
 
-export async function createSecret(
-  ctx: ContaboContext,
-  options: { type: "ssh" | "password"; name: string; value: string }
-): Promise<number> {
-  const { type, name, value } = options;
-  const secretId = await execCntb(ctx, `cntb create secret --type ${type} --name ${name} --value ${value}`);
-  return parseInt(secretId);
-}
-
-export async function getInstance(ctx: ContaboContext, instanceId: number): Promise<ContaboInstance> {
-  try {
-    return JSON.parse(await execCntb(ctx, `cntb get instance --output json "${instanceId}"`)) as ContaboInstance;
-  } catch (error: unknown) {
-    throw new Error(`Failed to get instance`, { cause: error });
+  async getInstance(instanceId: number): Promise<ContaboInstance> {
+    try {
+      return JSON.parse(await this.exec(`cntb get instance --output json "${instanceId}"`)) as ContaboInstance;
+    } catch (error) {
+      throw new Error(`Failed to get instance`, { cause: error });
+    }
   }
-}
 
-export async function createInstance(
-  ctx: ContaboContext,
-  options: { sshKeys: number[]; displayName: string }
-): Promise<number> {
-  const { sshKeys, displayName } = options;
-  const instanceId = parseInt(
-    await execCntb(
-      ctx,
-      sh`
+  async createInstance(options: { sshKeys: number[]; displayName: string }): Promise<number> {
+    const { sshKeys, displayName } = options;
+    const instanceId = parseInt(
+      await this.exec(
+        sh`
 				cntb create \
 				instance \ 
 				--region EU \
@@ -219,31 +188,23 @@ export async function createInstance(
  		   --displayName "${displayName}" \
 				--output json
 			`
-    )
-  );
-  // wait for the instance to be ready
-  while (true) {
-    const instance = await getInstance(ctx, instanceId);
-    if (instance.status === "running") {
-      break;
+      )
+    );
+    // wait for the instance to be ready
+    while (true) {
+      const instance = await this.getInstance(instanceId);
+      if (instance.status === "running") {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    return instanceId;
   }
-  return instanceId;
-}
 
-export async function reinstallInstance(
-  ctx: ContaboContext,
-  options: {
-    instanceId: number;
-    sshKeys: number[];
-    displayName: string;
-  }
-): Promise<number> {
-  const { instanceId, sshKeys, displayName } = options;
-  await execCntb(
-    ctx,
-    sh`
+  async reinstallInstance(options: { instanceId: number; sshKeys: number[]; displayName: string }): Promise<number> {
+    const { instanceId, sshKeys, displayName } = options;
+    await this.exec(
+      sh`
 		cntb create \
 		reinstall \ 
     instance \
@@ -254,69 +215,55 @@ export async function reinstallInstance(
     --displayName "${displayName}" \
 		--output json
 	`
-  );
-  // wait for the instance to be ready
-  while (true) {
-    const instance = await getInstance(ctx, instanceId);
-    if (instance.status === "running") {
-      break;
+    );
+    // wait for the instance to be ready
+    while (true) {
+      const instance = await this.getInstance(instanceId);
+      if (instance.status === "running") {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    return instanceId;
   }
-  return instanceId;
-}
 
-export async function listPrivateNetworks(
-  ctx: ContaboContext,
-  options?: {
+  async listPrivateNetworks(options?: {
     name?: string;
     page?: number;
     size?: number;
+  }): Promise<ContaboPrivateNetwork[]> {
+    const { page, size } = options ?? {};
+    return JSON.parse(
+      await this.exec(
+        [
+          "cntb get private-networks --output json",
+          name && `--name "${name}"`,
+          page && `--page ${page}`,
+          size && `--size ${size}`,
+        ]
+          .filter(Boolean)
+          .join(" ")
+      )
+    ) as ContaboPrivateNetwork[];
   }
-): Promise<ContaboPrivateNetwork[]> {
-  const { page, size } = options ?? {};
-  return JSON.parse(
-    await execCntb(
-      ctx,
-      [
-        "cntb get private-networks --output json",
-        name && `--name "${name}"`,
-        page && `--page ${page}`,
-        size && `--size ${size}`,
-      ]
-        .filter(Boolean)
-        .join(" ")
-    )
-  ) as ContaboPrivateNetwork[];
-}
 
-export async function getPrivateNetwork(ctx: ContaboContext, privateNetworkId: number): Promise<ContaboPrivateNetwork> {
-  return JSON.parse(
-    await execCntb(ctx, `cntb get private-network --output json "${privateNetworkId}"`)
-  ) as ContaboPrivateNetwork;
-}
+  async getPrivateNetwork(privateNetworkId: number): Promise<ContaboPrivateNetwork> {
+    return JSON.parse(
+      await this.exec(`cntb get private-network --output json "${privateNetworkId}"`)
+    ) as ContaboPrivateNetwork;
+  }
 
-export async function assignPrivateNetwork(
-  ctx: ContaboContext,
-  privateNetworkId: number,
-  instanceId: number
-): Promise<void> {
-  await execCntb(ctx, `cntb assign instance "${privateNetworkId}" "${instanceId}"`);
-}
+  async assignPrivateNetwork(privateNetworkId: number, instanceId: number): Promise<void> {
+    await this.exec(`cntb assign instance "${privateNetworkId}" "${instanceId}"`);
+  }
 
-export async function unassignPrivateNetwork(
-  ctx: ContaboContext,
-  privateNetworkid: number,
-  instanceId: number
-): Promise<void> {
-  await execCntb(ctx, `cntb unassign instance "${privateNetworkid}" "${instanceId}"`);
-}
+  async unassignPrivateNetwork(privateNetworkid: number, instanceId: number): Promise<void> {
+    await this.exec(`cntb unassign instance "${privateNetworkid}" "${instanceId}"`);
+  }
 
-export async function createPrivateNetwork(
-  ctx: ContaboContext,
-  options: { name: string; region: ContaboRegion }
-): Promise<number> {
-  return parseInt(
-    await execCntb(ctx, `cntb create private-network --name "${options.name}" --region "${options.region}"`)
-  );
+  async createPrivateNetwork(options: { name: string; region: ContaboRegion }): Promise<number> {
+    return parseInt(
+      await this.exec(`cntb create private-network --name "${options.name}" --region "${options.region}"`)
+    );
+  }
 }

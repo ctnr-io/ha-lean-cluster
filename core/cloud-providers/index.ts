@@ -1,1 +1,1 @@
-export * as ContaboProvider from './contabo.ts'
+export { ContaboProvider } from './contabo.ts'
