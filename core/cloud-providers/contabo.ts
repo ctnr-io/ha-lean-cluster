@@ -51,7 +51,21 @@ export interface ContaboInstance {
   region: string;
   regionName: string;
   sshKeys: number[];
-  status: string;
+  status:
+    | "provisioning"
+    | "uninstalled"
+    | "running"
+    | "stopped"
+    | "error"
+    | "installing"
+    | "unknown"
+    | "manual_provisioning"
+    | "product_not_available"
+    | "verification_required"
+    | "rescue"
+    | "pending_payment"
+    | "other"
+    | "reset_password";
   tenantId: string;
   vHostId: number;
   vHostName: string;
@@ -114,21 +128,21 @@ export interface ContaboPrivateNetwork {
 export type ContaboSshKey = ContaboSecret & { type: "ssh" };
 
 const {
-  CONTABO_CLIENT_SECRET = "",
-  CONTABO_CLIENT_ID = "",
-  CONTABO_PASSWORD = "",
-  CONTABO_TOKEN_URL = "",
-  CONTABO_USER = "",
+  CNTB_CLIENT_SECRET = "",
+  CNTB_CLIENT_ID = "",
+  CNTB_PASSWORD = "",
+  CNTB_TOKEN_URL = "",
+  CNTB_USER = "",
 } = process.env;
 
 export class ContaboProvider {
   constructor(
     private oauth: ContaboOauth = {
-      clientSecret: CONTABO_CLIENT_SECRET,
-      clientId: CONTABO_CLIENT_ID,
-      password: CONTABO_PASSWORD,
-      tokenUrl: CONTABO_TOKEN_URL,
-      user: CONTABO_USER,
+      clientSecret: CNTB_CLIENT_SECRET,
+      clientId: CNTB_CLIENT_ID,
+      password: CNTB_PASSWORD,
+      tokenUrl: CNTB_TOKEN_URL,
+      user: CNTB_USER,
     }
   ) {}
 
@@ -141,7 +155,9 @@ export class ContaboProvider {
         this.oauth.password && `--oauth2-password=${this.oauth.password}`,
         this.oauth.tokenUrl && `--oauth2-token-url=${this.oauth.tokenUrl}`,
         this.oauth.user && `--oauth2-user=${this.oauth.user}`,
-      ].filter(Boolean).join(" ")
+      ]
+        .filter(Boolean)
+        .join(" ")
     );
   }
 
@@ -181,7 +197,7 @@ export class ContaboProvider {
     return JSON.parse(await this.exec(`cntb get instance --output json "${instanceId}"`))[0] as ContaboInstance;
   }
 
-  async createInstance(options: { productId: string, sshKeys: number[]; displayName: string }): Promise<number> {
+  async createInstance(options: { productId: string; sshKeys: number[]; displayName: string }): Promise<number> {
     const { productId, sshKeys, displayName } = options;
     const instanceId = parseInt(
       await this.exec(
@@ -209,7 +225,7 @@ export class ContaboProvider {
     return instanceId;
   }
 
-  async reinstallInstance(options: { instanceId: number; sshKeys: number[]; }): Promise<number> {
+  async reinstallInstance(options: { instanceId: number; sshKeys: number[] }): Promise<number> {
     const { instanceId, sshKeys } = options;
     await this.exec(
       sh`
@@ -236,6 +252,35 @@ export class ContaboProvider {
 
   async cancelInstance(instanceId: number): Promise<void> {
     await this.exec(`cntb cancel instance "${instanceId}"`);
+  }
+
+  async stopInstance(instanceId: number): Promise<void> {
+    await this.exec(`cntb stop instance "${instanceId}"`);
+  }
+
+  async startInstance(instanceId: number): Promise<void> {
+    await this.exec(`cntb start instance "${instanceId}"`);
+  }
+
+  async restartInstance(instanceId: number): Promise<void> {
+    await this.exec(`cntb restart instance "${instanceId}"`);
+  }
+
+  async shutdownInstance(instanceId: number): Promise<void> {
+    await this.exec(`cntb shutdown instance "${instanceId}"`);
+  }
+
+  async upgradeInstance(options: { instanceId: number; privateNetwork?: boolean; backup?: boolean }) {
+    const { instanceId, privateNetwork, backup } = options;
+    await this.exec(
+      [
+        `cntb upgrade instance "${instanceId}"`,
+        privateNetwork && `--privateNetworking "${privateNetwork}"`,
+        backup && `--backup "${backup}"`,
+      ]
+        .filter(Boolean)
+        .join(" ")
+    );
   }
 
   async listPrivateNetworks(options?: {
@@ -265,11 +310,11 @@ export class ContaboProvider {
   }
 
   async assignPrivateNetwork(privateNetworkId: number, instanceId: number): Promise<void> {
-    await this.exec(`cntb assign instance "${privateNetworkId}" "${instanceId}"`);
+    await this.exec(`cntb assign privateNetwork "${privateNetworkId}" "${instanceId}"`);
   }
 
   async unassignPrivateNetwork(privateNetworkid: number, instanceId: number): Promise<void> {
-    await this.exec(`cntb unassign instance "${privateNetworkid}" "${instanceId}"`);
+    await this.exec(`cntb unassign privateNetwork "${privateNetworkid}" "${instanceId}"`);
   }
 
   async createPrivateNetwork(options: { name: string; region: ContaboRegion }): Promise<number> {
