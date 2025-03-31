@@ -10,7 +10,6 @@ export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
     super();
   }
 
-
   private static getRolesFromInstanceDisplayName(options: { clusterId: string; displayName: string }): NodeRoles {
     const { clusterId, displayName } = options;
     return displayName.replace(new RegExp(`cluster_${clusterId}_.+_`), "").split("_") as NodeRoles;
@@ -54,50 +53,48 @@ export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
   };
 
   async provisionNode(options: ProvisionNodeOptions): Promise<Node> {
-    try {
+    // TODO: add custom minimum cpu & memory
+    // Provision instance and assign it to private network
+    const region = ContaboNodeProvisioner.RegionMatch[options.region];
+    // unique roles orderby NodeRoles order
+    const roles = options.roles.sort((a, b) => {
+      const aIndex = NodeRoles.indexOf(a);
+      const bIndex = NodeRoles.indexOf(b);
+      return aIndex - bIndex;
+    });
+    const privateNetworkId = await this.provider.ensurePrivateNetwork({
+      name: `cluster_${options.clusterId}_${region}`,
+      region,
+    });
+    const instanceId = await this.provider.ensureInstance({
+      provisioning: "auto",
+      displayName: `cluster_${options.clusterId}_${hash("sha256", randomBytes(16), "hex").substring(0, 8)}_${roles.join(
+        "_"
+      )}`,
+      sshKeys: [
+        await this.provider.ensureSshKey({
+          name: `cluster_${options.clusterId}_${region}`,
+          value: await readFile("public.key"),
+        }),
+      ],
+      privateNetworks: [privateNetworkId],
       // TODO: add custom minimum cpu & memory
-      // Provision instance and assign it to private network
-      const region = ContaboNodeProvisioner.RegionMatch[options.region];
-      // unique roles orderby NodeRoles order
-      const roles = options.roles.sort((a, b) => {
-        const aIndex = NodeRoles.indexOf(a);
-        const bIndex = NodeRoles.indexOf(b);
-        return aIndex - bIndex;
-      });
-      const privateNetworkId = await this.provider.ensurePrivateNetwork({
-        name: `cluster_${options.clusterId}_${region}`,
-        region,
-      });
-      const instanceId = await this.provider.ensureInstance({
-        provisioning: "manual",
-        displayName: `cluster_${options.clusterId}_${hash("sha256", randomBytes(16), "hex").substring(0, 8)}_${roles.join("_")}`,
-        sshKeys: [
-          await this.provider.ensureSshKey({
-            name: `cluster_${options.clusterId}_${region}`,
-            value: await readFile("public.key"),
-          }),
-        ],
-        privateNetworks: [privateNetworkId],
-        // TODO: add custom minimum cpu & memory
-        productId: "V78",
-      });
+      productId: "V78",
+    });
 
-      // Find instance in private network
-      const privateNetwork = await this.provider.getPrivateNetwork(privateNetworkId);
-      const instance = privateNetwork.instances.find((instance) => instance.instanceId === instanceId);
-      if (!instance) {
-        throw new Error("Instance not found in private network");
-      }
-
-      // Transform instance to node
-      return ContaboNodeProvisioner.transformPrivateNetworkInstanceToNode({
-        clusterId: options.clusterId,
-        privateNetwork,
-        instance,
-      });
-    } catch (error) {
-      throw new Error(`Failed to provision node, rolling back`, { cause: error });
+    // Find instance in private network
+    const privateNetwork = await this.provider.getPrivateNetwork(privateNetworkId);
+    const instance = privateNetwork.instances.find((instance) => instance.instanceId === instanceId);
+    if (!instance) {
+      throw new Error("Instance not found in private network");
     }
+
+    // Transform instance to node
+    return ContaboNodeProvisioner.transformPrivateNetworkInstanceToNode({
+      clusterId: options.clusterId,
+      privateNetwork,
+      instance,
+    });
   }
 
   async deprovisionNode(id: string): Promise<void> {
@@ -107,13 +104,7 @@ export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
       Number.parseInt(String(data.instanceId)),
     ];
     await this.provider.unassignPrivateNetwork(privateNetworkId, instanceId).catch(() => {});
-    await this.provider
-      .reinstallInstance({
-        instanceId,
-        sshKeys: [],
-      })
-      .catch(() => {});
-    await this.provider.setInstanceDisplayName(instanceId, "");
+    await this.provider.resetInstance(instanceId);
   }
 
   async listNodes(options: ListNodeOptions): Promise<Node[]> {

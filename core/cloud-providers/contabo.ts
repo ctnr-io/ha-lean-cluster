@@ -190,13 +190,17 @@ export class ContaboProvider {
   }): Promise<ContaboSecret[]> {
     const { type, name, page, size } = options ?? {};
     return JSON.parse(
-      await this.exec([
-        "cntb get secrets --output json",
-        name && `--name ${name}`,
-        type && `--type ${type}`,
-        page !== undefined && `--page "${page}"`,
-        size !== undefined && `--size "${size}"`,
-      ].filter(Boolean).join(" "))
+      await this.exec(
+        [
+          "cntb get secrets --output json",
+          name && `--name ${name}`,
+          type && `--type ${type}`,
+          page !== undefined && `--page "${page}"`,
+          size !== undefined && `--size "${size}"`,
+        ]
+          .filter(Boolean)
+          .join(" ")
+      )
     ) as ContaboSecret[];
   }
 
@@ -376,7 +380,9 @@ export class ContaboProvider {
         return null;
       }
       // find the first available instance
-      const availableInstance = instances.find((instance) => instance.displayName === "" && (instance.status === "stopped" || instance.status === "running"));
+      const availableInstance = instances.find(
+        (instance) => instance.displayName === "" && (instance.status === "stopped" || instance.status === "running")
+      );
       if (!availableInstance) {
         return null;
       }
@@ -439,6 +445,7 @@ export class ContaboProvider {
     // if instance doesn't have privateNetwork addon, add it
     if (!instance.addOns.some((addOn) => addOn.id === 1477)) {
       if (provisioning !== "auto") {
+        this.resetInstance(instance.instanceId);
         throw new Error(
           `Automatic provisioning disabled, no private network addon found on instance ${instance.displayName}, please add private network addon to instance in Contabo first`
         );
@@ -449,9 +456,11 @@ export class ContaboProvider {
       });
     }
 
-    // assign private networks if any
-    await Promise.all(
-      privateNetworks.map((privateNetworkId) => this.assignPrivateNetwork(privateNetworkId, instance.instanceId))
+    // assign private networks if any and if not
+    await Promise.allSettled(
+      privateNetworks.map((privateNetworkId) =>
+        this.assignPrivateNetwork(privateNetworkId, instance.instanceId).catch(() => {})
+      )
     );
 
     // reinstall instance

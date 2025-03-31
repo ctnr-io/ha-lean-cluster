@@ -8,8 +8,7 @@ export abstract class AbstractNodeProvisioner implements NodeProvisioner {
     providerCustomerId: string;
     privateNetworkId: string;
   }): string {
-    const encodeBuffer = new TextEncoder().encode;
-    return encodeBase64(encodeBuffer(JSON.stringify(data)));
+    return encodeBase64(new TextEncoder().encode(JSON.stringify(data)));
   }
 
   protected static generateNodeId(data: {
@@ -19,8 +18,7 @@ export abstract class AbstractNodeProvisioner implements NodeProvisioner {
     privateNetworkId: string;
     instanceId: string;
   }): string {
-    const encodeBuffer = new TextEncoder().encode;
-    return encodeBase64(encodeBuffer(JSON.stringify(data)));
+    return encodeBase64(new TextEncoder().encode(JSON.stringify(data)));
   }
 
   protected static retrieveDataFromNodeNetworkId(networkId: string): {
@@ -29,8 +27,7 @@ export abstract class AbstractNodeProvisioner implements NodeProvisioner {
     providerCustomerId: string;
     privateNetworkId: string;
   } {
-    const decodeBuffer = new TextDecoder().decode;
-    return JSON.parse(decodeBuffer(decodeBase64(networkId)));
+    return JSON.parse(new TextDecoder().decode(decodeBase64(networkId)));
   }
 
   protected static retrieveDataFromNodeId(id: string): {
@@ -40,8 +37,7 @@ export abstract class AbstractNodeProvisioner implements NodeProvisioner {
     privateNetworkId: string;
     instanceId: string;
   } {
-    const decodeBuffer = new TextDecoder().decode;
-    return JSON.parse(decodeBuffer(decodeBase64(id)));
+    return JSON.parse(new TextDecoder().decode(decodeBase64(id)));
   }
   
   abstract provisionNode(options: ProvisionNodeOptions): Promise<Node>;
