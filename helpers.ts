@@ -37,7 +37,7 @@ export const NodeRoles = ["control-plane", "etcd", "worker"] as const;
 export type NodeRoles = (typeof NodeRoles)[number][];
 
 export type Node = {
-  id: string;
+  name: string;
   publicIp: string;
   privateIp: string;
   network: string;

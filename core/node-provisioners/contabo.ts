@@ -3,67 +3,13 @@ import * as process from "node:process";
 import { ListNodeOptions, Node, NodeRoles, ProvisionNodeOptions } from "./mod.ts";
 import { AbstractNodeProvisioner } from "./abstract.ts";
 import { ContaboProvider, ContaboRegion, ContaboInstance, ContaboPrivateNetwork } from "../cloud-providers/contabo.ts";
+import { hash, randomBytes, randomInt } from "node:crypto";
 
 export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
   constructor(private provider: ContaboProvider) {
     super();
   }
 
-  private async getAvailableInstance(): Promise<ContaboInstance | null> {
-    for (let page = 0; page < Infinity; page++) {
-      const instances = await this.provider.listInstances({ page });
-      if (instances.length === 0) {
-        return null;
-      }
-      // find the first available instance
-      const availableInstance = instances.find(
-        (instance) => instance.displayName === "" && instance.status === "running"
-      );
-      if (availableInstance) {
-        await this.provider.setInstanceDisplayName(availableInstance.instanceId, "claimed");
-        return availableInstance;
-      }
-    }
-    return null;
-  }
-
-  async ensureSshKey(options: { name: string; value: string }): Promise<number> {
-    const { name, value } = options;
-    const sshKeys = await this.provider.listSecrets({ type: "ssh", name });
-    if (sshKeys.length === 0) {
-      return await this.provider.createSecret({ type: "ssh", name, value });
-    }
-    return sshKeys[0].secretId;
-  }
-
-  async ensurePrivateNetwork(options: { name: string; region: ContaboRegion }): Promise<number> {
-    const privateNetworks = await this.provider.listPrivateNetworks({ name: options.name });
-    if (privateNetworks.length === 0) {
-      return await this.provider.createPrivateNetwork(options);
-    }
-    return privateNetworks[0].privateNetworkId;
-  }
-
-  async ensureInstance(options: { mode: "auto" | "manual"; displayName: string; sshKeys: number[] }): Promise<number> {
-    const { mode, displayName, sshKeys } = options;
-    const instance = await this.getAvailableInstance();
-    if (instance) {
-      // reinstall instance
-      const instanceId = await this.provider.reinstallInstance({
-        instanceId: instance.instanceId,
-        sshKeys,
-      });
-      await this.provider.setInstanceDisplayName(instanceId, displayName);
-      return instanceId;
-    }
-    if (mode === "auto") {
-      // create instance
-      return await this.provider.createInstance({ productId: "V78", sshKeys, displayName });
-    }
-    throw new Error(
-      "Automatic provisioning disabled, no available instances found, please provision instances in Contabo first"
-    );
-  }
 
   private static getRolesFromInstanceDisplayName(options: { clusterId: string; displayName: string }): NodeRoles {
     const { clusterId, displayName } = options;
@@ -118,21 +64,23 @@ export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
         const bIndex = NodeRoles.indexOf(b);
         return aIndex - bIndex;
       });
-      const privateNetworkId = await this.ensurePrivateNetwork({
-        name: `cluster-${options.clusterId}-${region}`,
+      const privateNetworkId = await this.provider.ensurePrivateNetwork({
+        name: `cluster_${options.clusterId}_${region}`,
         region,
       });
-      const instanceId = await this.ensureInstance({
-        mode: "manual",
-        displayName: `cluster_${options.clusterId}_${region}_${roles.join("_")}`,
+      const instanceId = await this.provider.ensureInstance({
+        provisioning: "manual",
+        displayName: `cluster_${options.clusterId}_${hash("sha256", randomBytes(16), "hex").substring(0, 8)}_${roles.join("_")}`,
         sshKeys: [
-          await this.ensureSshKey({
-            name: process.env.DOMAIN_NAME,
-            value: await readFile("private.key"),
+          await this.provider.ensureSshKey({
+            name: `cluster_${options.clusterId}_${region}`,
+            value: await readFile("public.key"),
           }),
         ],
+        privateNetworks: [privateNetworkId],
+        // TODO: add custom minimum cpu & memory
+        productId: "V78",
       });
-      await this.provider.assignPrivateNetwork(privateNetworkId, instanceId);
 
       // Find instance in private network
       const privateNetwork = await this.provider.getPrivateNetwork(privateNetworkId);
@@ -162,12 +110,7 @@ export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
     await this.provider
       .reinstallInstance({
         instanceId,
-        sshKeys: [
-          await this.ensureSshKey({
-            name: process.env.DOMAIN_NAME,
-            value: await readFile("private.key"),
-          }),
-        ],
+        sshKeys: [],
       })
       .catch(() => {});
     await this.provider.setInstanceDisplayName(instanceId, "");

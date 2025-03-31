@@ -19,5 +19,6 @@
   },
   "unstable": [
     "sloppy-imports"
-  ]
+  ],
+  "lint": {}
 }

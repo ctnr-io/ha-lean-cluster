@@ -1,89 +1,78 @@
-import { after, describe, it } from "@std/testing/bdd";
+import { describe, it } from "@std/testing/bdd";
 import { ContaboPrivateNetwork, ContaboProvider, ContaboSecret, ContaboInstance } from "./contabo.ts";
-import { assertEquals, assertStringIncludes } from "@std/assert";
+import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
 import { randomUUID } from "node:crypto";
-import { AllowedTerminationSignals, executeSSH, handleTerminationSignals, TerminationSignals } from "../utils.ts";
+import { executeSSH } from "../utils.ts";
 
 const SSH_PUBLIC_KEY = Deno.readTextFileSync("public.key");
 
-const testId = `test-${randomUUID()}`;
+const testId = `test_${randomUUID()}_${new Date().getTime()}`;
 const provider = new ContaboProvider();
 
-async function ensureTestInstance(): Promise<ContaboInstance> {
-  let instance: ContaboInstance | undefined = undefined;
-  const instances = await provider.listInstances({ page: 0 });
-  instance = instances.find(
-    (instance) =>
-      instance.displayName === testId ||
-      (instance.displayName.startsWith("test-") && instance.status === "stopped" && instance.productId === "V76")
-  );
-  // create test instance if it doesn't exist
-
-  if (!instance) {
-    const allTestsInstances = instances.filter((instance) => instance.displayName.startsWith("test-") && instance.status !== "installing");
-    if (allTestsInstances.length <= 3) {
-      console.info("No test instance found, creating a new one");
-      const instanceId = await provider.createInstance({
-        productId: "V76",
-        displayName: testId,
-        sshKeys: [],
-      });
-      return await provider.getInstance(instanceId);
-    }
-    console.info("Too many test instances, wait for available instance");
-    let tries = 0;
-    while (true) {
-      const instances = await provider.listInstances({ page: 0 });
-      instance = instances.find(
-        (instance) =>
-          instance.displayName === testId ||
-          (instance.displayName.startsWith("test-") && instance.status === "stopped" && instance.productId === "V76")
-      );
-      if (instance) {
-        break;
-      }
-      // After more than 3 tries (>50s), stop all instances
-      if (tries++ > 10) {
-        console.info("Stopping all test instances because we waited too much");
-        await Promise.allSettled(allTestsInstances.map((instance) => provider.stopInstance(instance.instanceId)));
-      }
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-    }
-  }
-  const instanceId = instance.instanceId;
-  if (instance.status !== "running" && instance.status !== "installing") {
-    await provider.startInstance(instanceId).catch(() => {});
-  }
-  await provider.setInstanceDisplayName(instanceId, testId);
-  // wait for the instance to be running
-  while (true) {
-    const instance = await provider.getInstance(instanceId);
-    if (instance.status === "running") {
-      break;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 5000));
-  }
-  return instance;
+function getTestInstanceTimestamp(testId: string): number {
+  const timestampString = testId.split("_")[2];
+  return timestampString ? parseInt(timestampString) : 0;
+}
+function checkTimestampIsMoreThan1MinutesAgo(testId: string): boolean {
+  const timestamp = getTestInstanceTimestamp(testId);
+  return timestamp < Date.now() - 60 * 1000;
 }
 
-async function cleanup() {
-  console.info("Stopping test instance");
-  const instance = await ensureTestInstance();
-  await provider.stopInstance(instance.instanceId);
-}
-
-handleTerminationSignals(async () => {
-  await cleanup();
-  Deno.exit(0);
-});
-
-// Make sure the test instance is stopped after tests
+let instanceId: number | undefined = undefined;
+let instance: ContaboInstance | undefined = undefined;
 
 describe(
   "Contabo Cloud Provider: testId=" + testId,
   {
+    beforeAll: async () => {
+      // clean up all test private networks with timestamp > 5 minutes
+      const privateNetworks = await provider.listPrivateNetworks({ page: 1, name: `test_` });
+      const privateNetworkToCleanUp = privateNetworks.filter((privateNetwork) =>
+        checkTimestampIsMoreThan1MinutesAgo(privateNetwork.name)
+      );
+      await Promise.all(
+        privateNetworkToCleanUp.map(async (privateNetwork) => {
+          // unassign all instances from private network
+          await Promise.all(
+            privateNetwork.instances.map((instance) =>
+              provider.unassignPrivateNetwork(privateNetwork.privateNetworkId, instance.instanceId)
+            )
+          );
+          // delete private network
+          await provider.deletePrivateNetwork(privateNetwork.privateNetworkId);
+        })
+      );
+
+      // clean up all test instance with timestamp > 5 minutes
+      for (let page = 1; page < Infinity; page++) {
+        const instances = await provider.listInstances({ page });
+        if (instances.length === 0) {
+          break;
+        }
+        const instanceToCleanUp = instances
+          .filter((instance) => instance.displayName.startsWith("test_"))
+          .filter((instance) => checkTimestampIsMoreThan1MinutesAgo(instance.displayName));
+        await Promise.all(instanceToCleanUp.map((instance) => provider.resetInstance(instance.instanceId)));
+      }
+
+      // clean up all test secrets with timestamp > 5 minutes
+      const secrets = await provider.listSecrets({ page: 1, name: `test_` });
+      const secretToCleanUp = secrets.filter((secret) => checkTimestampIsMoreThan1MinutesAgo(secret.name));
+      await Promise.all(secretToCleanUp.map((secret) => provider.deleteSecret(secret.secretId)));
+    },
     afterAll: async () => {
-      await cleanup();
+      // clean up test instance
+      if (instanceId) {
+        await provider.resetInstance(instanceId);
+      }
+      // clean up test private network
+      const privateNetworks = await provider.listPrivateNetworks({ name: testId });
+      await Promise.all(
+        privateNetworks.map((privateNetwork) => provider.deletePrivateNetwork(privateNetwork.privateNetworkId))
+      );
+      // clean up test secret
+      const secretId = await provider.listSecrets({ type: "ssh", name: testId });
+      await Promise.all(secretId.map((secret) => provider.deleteSecret(secret.secretId)));
     },
     sanitizeExit: true,
     sanitizeOps: true,
@@ -93,15 +82,22 @@ describe(
     it("Should be able to create, list, get instances and cancel it", async () => {
       // List instances and get first one
       {
-        const instances = await provider.listInstances({ page: 0 });
+        const instances = await provider.listInstances({ page: 1 });
         const instance = await provider.getInstance(instances[0].instanceId);
         assertEquals(instance.instanceId, instances[0].instanceId);
       }
 
       // Ensure test instance
       {
-        const instance = await ensureTestInstance();
-        assertStringIncludes(instance.displayName, "test-");
+        instanceId = await provider.ensureInstance({
+          provisioning: "manual",
+          displayName: testId,
+          sshKeys: [],
+          privateNetworks: [],
+          productId: "V76",
+        });
+        instance = await provider.getInstance(instanceId);
+        assertStringIncludes(instance.displayName, "test_");
       }
     });
 
@@ -150,11 +146,12 @@ describe(
     });
 
     it("Assign secret and private network to instance", async () => {
-      let instanceId: number | undefined = undefined;
       let secretId: number | undefined = undefined;
       let privateNetworkId: number | undefined = undefined;
       try {
-        const instance = await ensureTestInstance();
+        if (!instanceId || !instance) {
+          throw new Error("Instance is not created");
+        }
         // check if the private network addons is enabled on instance
         if (!instance.addOns.some((addOn) => addOn.id === 1477)) {
           console.info("Private network addon is not enabled on instance, add it");
@@ -165,18 +162,30 @@ describe(
         }
         instanceId = instance.instanceId;
         privateNetworkId = await provider.createPrivateNetwork({ name: testId, region: "EU" });
-        const privateNetwork = await provider.getPrivateNetwork(privateNetworkId);
+        let privateNetwork = await provider.getPrivateNetwork(privateNetworkId);
         secretId = await provider.createSecret({ type: "ssh", name: testId, value: SSH_PUBLIC_KEY });
         const secret = await provider.getSecret(secretId);
 
         await provider.assignPrivateNetwork(privateNetwork.privateNetworkId, instance.instanceId);
+        // refetch private network after assign
+        privateNetwork = await provider.getPrivateNetwork(privateNetworkId);
         await provider.reinstallInstance({
           instanceId: instance.instanceId,
           sshKeys: [secret.secretId],
         });
+
         // check that private network is assigned
+        const instanceInPrivateNetwork = privateNetwork.instances.find(
+          (instance) => instance.instanceId === instanceId
+        );
+        assertExists(instanceInPrivateNetwork);
+
+        // check that the private network is assigned to the instance
+        const [ipGateway, netmask] = privateNetwork.cidr.split("/");
+        const privateIp = instanceInPrivateNetwork.privateIpConfig.v4.find((ip) => ip.gateway === ipGateway);
         const stdout = await executeSSH(instance.ipv4, `ip a`);
-        assertStringIncludes(stdout, `3: eth1`);
+        assertExists(privateIp);
+        assertStringIncludes(stdout, `inet ${privateIp?.ip}/${netmask}`);
       } finally {
         // unassign private network
         if (privateNetworkId !== undefined && instanceId !== undefined) {

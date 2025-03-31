@@ -5,6 +5,7 @@
     "jsr:@std/assert@^1.0.12": "1.0.12",
     "jsr:@std/async@^1.0.12": "1.0.12",
     "jsr:@std/data-structures@^1.0.6": "1.0.6",
+    "jsr:@std/encoding@*": "1.0.7",
     "jsr:@std/fs@^1.0.15": "1.0.15",
     "jsr:@std/internal@^1.0.6": "1.0.6",
     "jsr:@std/path@*": "1.0.8",
@@ -30,6 +31,9 @@
     },
     "@std/data-structures@1.0.6": {
       "integrity": "76a7fd8080c66604c0496220a791860492ab21a04a63a969c0b9a0609bbbb760"
+    },
+    "@std/encoding@1.0.7": {
+      "integrity": "f631247c1698fef289f2de9e2a33d571e46133b38d042905e3eac3715030a82d"
     },
     "@std/fs@1.0.15": {
       "integrity": "c083fb479889d6440d768e498195c3fc499d426fbf9a6592f98f53884d1d3f41",

@@ -11,6 +11,8 @@ export interface ContaboOauth {
 
 export type ContaboRegion = "EU" | "US-central" | "US-east" | "US-west" | "SIN";
 
+export type ContaboProductId = "V76" | "V78";
+
 export interface ContaboIp {
   gateway: string;
   ip: string;
@@ -161,8 +163,18 @@ export class ContaboProvider {
     );
   }
 
-  async listInstances({ page }: { page: number }): Promise<ContaboInstance[]> {
-    const instances = JSON.parse(await this.exec("cntb get instances --output json")) as ContaboInstance[];
+  async listInstances({ page, size }: { page?: number; size?: number }): Promise<ContaboInstance[]> {
+    const instances = JSON.parse(
+      await this.exec(
+        [
+          "cntb get instances --output json",
+          page !== undefined && `--page "${page}"`,
+          size !== undefined && `--size "${size}"`,
+        ]
+          .filter(Boolean)
+          .join(" ")
+      )
+    ) as ContaboInstance[];
     return instances;
   }
 
@@ -170,12 +182,21 @@ export class ContaboProvider {
     await this.exec(`cntb update instance "${instanceId}" --displayName "${displayName}"`);
   }
 
-  async listSecrets(options?: { type?: "ssh" | "password"; name?: string }): Promise<ContaboSecret[]> {
-    const { type, name } = options ?? {};
+  async listSecrets(options?: {
+    type?: "ssh" | "password";
+    name?: string;
+    page?: number;
+    size?: number;
+  }): Promise<ContaboSecret[]> {
+    const { type, name, page, size } = options ?? {};
     return JSON.parse(
-      await this.exec(
-        ["cntb get secrets --output json", name && `--name ${name}`, type && `--type ${type}`].filter(Boolean).join(" ")
-      )
+      await this.exec([
+        "cntb get secrets --output json",
+        name && `--name ${name}`,
+        type && `--type ${type}`,
+        page !== undefined && `--page "${page}"`,
+        size !== undefined && `--size "${size}"`,
+      ].filter(Boolean).join(" "))
     ) as ContaboSecret[];
   }
 
@@ -197,7 +218,11 @@ export class ContaboProvider {
     return JSON.parse(await this.exec(`cntb get instance --output json "${instanceId}"`))[0] as ContaboInstance;
   }
 
-  async createInstance(options: { productId: string; sshKeys: number[]; displayName: string }): Promise<number> {
+  async createInstance(options: {
+    productId: ContaboProductId;
+    sshKeys: number[];
+    displayName: string;
+  }): Promise<number> {
     const { productId, sshKeys, displayName } = options;
     const instanceId = parseInt(
       await this.exec(
@@ -325,5 +350,119 @@ export class ContaboProvider {
 
   async deletePrivateNetwork(privateNetworkId: number): Promise<void> {
     await this.exec(`cntb delete privateNetwork "${privateNetworkId}"`);
+  }
+
+  // helpers
+  public async resetInstance(instanceId: number): Promise<void> {
+    await this.setInstanceDisplayName(instanceId, "");
+    await this.stopInstance(instanceId).catch(() => {});
+  }
+
+  private async resetInstanceWithDisplayName(displayName: string): Promise<void> {
+    for (let page = 1; page < Infinity; page++) {
+      const instances = await this.listInstances({ page });
+      const instance = instances.find((instance) => instance.displayName === displayName);
+      if (instance) {
+        await this.resetInstance(instance.instanceId);
+        return;
+      }
+    }
+  }
+
+  private async getAvailableInstance(options: { displayName: string }): Promise<ContaboInstance | null> {
+    for (let page = 1; page < Infinity; page++) {
+      const instances = await this.listInstances({ page });
+      if (instances.length === 0) {
+        return null;
+      }
+      // find the first available instance
+      const availableInstance = instances.find((instance) => instance.displayName === "" && (instance.status === "stopped" || instance.status === "running"));
+      if (!availableInstance) {
+        return null;
+      }
+
+      // apply display name
+      try {
+        await this.setInstanceDisplayName(availableInstance.instanceId, options.displayName);
+      } catch {
+        // if the display name is already taken, reset the instance that use it and try again
+        await this.resetInstanceWithDisplayName(options.displayName);
+        await this.setInstanceDisplayName(availableInstance.instanceId, options.displayName);
+      }
+
+      return availableInstance;
+    }
+    return null;
+  }
+
+  async ensureSshKey(options: { name: string; value: string }): Promise<number> {
+    const { name, value } = options;
+    const sshKeys = await this.listSecrets({ type: "ssh", name });
+    if (sshKeys.length === 0) {
+      return await this.createSecret({ type: "ssh", name, value });
+    }
+    return sshKeys[0].secretId;
+  }
+
+  async ensurePrivateNetwork(options: { name: string; region: ContaboRegion }): Promise<number> {
+    const privateNetworks = await this.listPrivateNetworks({ name: options.name });
+    if (privateNetworks.length === 0) {
+      return await this.createPrivateNetwork(options);
+    }
+    return privateNetworks[0].privateNetworkId;
+  }
+
+  async ensureInstance(options: {
+    provisioning: "auto" | "manual";
+    displayName: string;
+    sshKeys: number[];
+    productId: ContaboProductId;
+    privateNetworks: number[];
+  }): Promise<number> {
+    const { provisioning, productId, displayName, sshKeys, privateNetworks } = options;
+    let instance: ContaboInstance | undefined | null = undefined;
+    instance = await this.getAvailableInstance(options);
+
+    // if there is no instance available, create one if provisioning is automatic
+    if (!instance) {
+      if (provisioning !== "auto") {
+        throw new Error(
+          `Automatic provisioning disabled, no available instances found, please provision instances with productId ${productId} in Contabo first`
+        );
+      } else {
+        // create instance
+        const instanceId = await this.createInstance({ productId, sshKeys, displayName });
+        instance = await this.getInstance(instanceId);
+      }
+    }
+
+    // if instance doesn't have privateNetwork addon, add it
+    if (!instance.addOns.some((addOn) => addOn.id === 1477)) {
+      if (provisioning !== "auto") {
+        throw new Error(
+          `Automatic provisioning disabled, no private network addon found on instance ${instance.displayName}, please add private network addon to instance in Contabo first`
+        );
+      }
+      await this.upgradeInstance({
+        instanceId: instance.instanceId,
+        privateNetwork: true,
+      });
+    }
+
+    // assign private networks if any
+    await Promise.all(
+      privateNetworks.map((privateNetworkId) => this.assignPrivateNetwork(privateNetworkId, instance.instanceId))
+    );
+
+    // reinstall instance
+    const instanceId = await this.reinstallInstance({
+      instanceId: instance.instanceId,
+      sshKeys,
+    });
+
+    if (instance.displayName !== displayName) {
+      await this.setInstanceDisplayName(instanceId, displayName);
+    }
+    return instanceId;
   }
 }
