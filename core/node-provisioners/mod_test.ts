@@ -2,8 +2,8 @@ import { describe, it } from "@std/testing/bdd";
 import { ContaboNodeProvisioner } from "./contabo.ts";
 import { ContaboProvider } from "../cloud-providers/contabo.ts";
 import { Node, NodeProvider, NodeProvisioner } from "./mod.ts";
-import { assertThrows } from "@std/assert/throws";
 import { assertFalse } from "@std/assert/false";
+import { executeSSH } from "../utils.ts";
 
 const contaboProvider = new ContaboProvider();
 
@@ -73,6 +73,9 @@ Object.entries(provisioners).forEach(([provider, provisioner]) => {
           clusterId,
           roles: ["control-plane"],
         });
+				// ssh into the node and check if it is running
+				assertFalse(node.id === undefined);
+				await executeSSH(node.publicIp, "echo 'hello world'");
       });
 
       it("should list nodes", async () => {

@@ -9,7 +9,7 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
   constructor(protected nodeProvisioner: NodeProvisioner) {}
 
   protected static generateClusterId(): string {
-    return hash("sha2", randomUUID(), "hex");
+    return hash("sha256", randomUUID(), "hex").substring(0, 8);
   }
 
   protected abstract getVersion(): "1.32"; // currently only 1.32 is supported
