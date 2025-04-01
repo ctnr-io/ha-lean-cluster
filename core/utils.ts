@@ -4,7 +4,7 @@ import * as fs from "node:fs/promises";
 
 export const NodeRoles = ["control-plane", "etcd", "worker"] as const;
 export type NodeRoles = (typeof NodeRoles)[number][];
-type NodeRole = (typeof NodeRoles)[number];
+export type NodeRole = (typeof NodeRoles)[number];
 
 const _exec = util.promisify(childProcess.exec);
 

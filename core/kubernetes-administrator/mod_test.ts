@@ -1,8 +1,8 @@
 import { describe, it } from "@std/testing/bdd";
 import { ContaboNodeProvisioner } from "../node-provisioners/contabo.ts";
 import { ContaboProvider } from "../cloud-providers/contabo.ts";
-import { createKubernetesAdministrator, KubernetesAdministrator } from "./mod.ts";
-import { assertExists } from "@std/assert";
+import { createKubernetesAdministrator } from "./mod.ts";
+import { assertEquals, assertExists } from "@std/assert";
 import { assertFalse } from "@std/assert/false";
 import { executeSSH } from "../utils.ts";
 import { Node } from "../node-provisioners/mod.ts";
@@ -150,6 +150,35 @@ describe(
       );
       console.info("Kubernetes nodes after removing worker:", kubeNodesOutput);
       assertFalse(kubeNodesOutput.includes(workerNode.publicIp));
+    });
+
+    it("should check etcd health", async () => {
+      // Check etcd health
+      const healthStatus = await k8sAdmin.checkEtcdHealth(testClusterId);
+      
+      // Verify etcd is healthy
+      assertEquals(healthStatus.healthy, true);
+      assertExists(healthStatus.healthyEndpoints > 0);
+      assertExists(healthStatus.members > 0);
+      assertFalse(healthStatus.hasAlarms);
+      
+      console.info("Etcd health status:", healthStatus);
+    });
+
+    it("should backup etcd", async () => {
+      // Backup etcd
+      const backupPath = await k8sAdmin.backupEtcd(testClusterId);
+      
+      // Verify backup was created
+      assertExists(backupPath);
+      console.info("Etcd backup created at:", backupPath);
+      
+      // Verify backup file exists on the node
+      const backupExists = await executeSSH(
+        controlPlaneNode.publicIp,
+        `test -f ${backupPath} && echo "exists" || echo "not found"`
+      );
+      assertEquals(backupExists.trim(), "exists");
     });
 
     it("should delete the cluster", async () => {
