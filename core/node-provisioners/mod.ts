@@ -24,20 +24,33 @@ export interface ProvisionNodeOptions {
    * - 'manual': Throw an error if no node is available on the provider
    */
   mode: "auto" | "manual";
-  region: "europe";
+  region: "eu";
   clusterId: string;
   roles: NodeRoles;
 }
+
+export interface DeprovisionNodeOptions {
+  clusterId: string;
+  nodeId: string;
+}
+
+export type NodeRegion = "eu";
+export type NodeProviderSlug = 'cntb';
 
 export interface ListNodeOptions {
   clusterId: string;
 }
 
+export interface GetNodeOptions {
+  clusterId: string;
+  nodeId: string;
+}
+
 export interface NodeProvisioner {
   provisionNode: (options: ProvisionNodeOptions) => Promise<Node>;
-  deprovisionNode: (id: string) => Promise<void>;
+  deprovisionNode: (options: DeprovisionNodeOptions) => Promise<void>;
   listNodes: (options: ListNodeOptions) => Promise<Node[]>;
-  getNode: (nodeId: string) => Promise<Node>;
+  getNode: (options: GetNodeOptions) => Promise<Node>;
 }
 
 export type NodeProvider = "contabo";

@@ -269,12 +269,21 @@ export class ContaboProvider {
       `
     );
     // wait for the instance to be ready
-    while (true) {
+    for (let wait = true; wait; await new Promise((resolve) => setTimeout(resolve, 5000))) {
       const instance = await this.getInstance(instanceId);
-      if (instance.status === "running") {
-        break;
+      switch (instance.status) {
+        case "installing":
+          break;
+        case "stopped":
+          await this.startInstance(instanceId);
+          wait = false;
+          break;
+        case "running":
+          wait = false;
+          break;
+        default:
+          throw new Error(`Instance ${instanceId} failed to reinstall`);
       }
-      await new Promise((resolve) => setTimeout(resolve, 5000));
     }
     return instanceId;
   }
@@ -373,7 +382,7 @@ export class ContaboProvider {
     }
   }
 
-  private async getAvailableInstance(options: { displayName: string }): Promise<ContaboInstance | null> {
+  private async getAvailableInstance(options: { displayName: string, productId?: ContaboProductId }): Promise<ContaboInstance | null> {
     for (let page = 1; page < Infinity; page++) {
       const instances = await this.listInstances({ page });
       if (instances.length === 0) {
@@ -381,7 +390,9 @@ export class ContaboProvider {
       }
       // find the first available instance
       const availableInstance = instances.find(
-        (instance) => instance.displayName === "" && (instance.status === "stopped" || instance.status === "running")
+        (instance) => instance.displayName === "" 
+        // && (options.productId === undefined || instance.productId === options.productId)
+        && (instance.status === "stopped" || instance.status === "running")
       );
       if (!availableInstance) {
         return null;
@@ -445,7 +456,7 @@ export class ContaboProvider {
     // if instance doesn't have privateNetwork addon, add it
     if (!instance.addOns.some((addOn) => addOn.id === 1477)) {
       if (provisioning !== "auto") {
-        this.resetInstance(instance.instanceId);
+        await this.resetInstance(instance.instanceId);
         throw new Error(
           `Automatic provisioning disabled, no private network addon found on instance ${instance.displayName}, please add private network addon to instance in Contabo first`
         );

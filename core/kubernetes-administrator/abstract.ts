@@ -1,7 +1,7 @@
 import { hash, randomUUID } from "node:crypto";
 import { AddNodeOptions, CreateClusterOptions, EtcdBackupOptions, EtcdHealthStatus, EtcdRestoreOptions, KubernetesAdministrator, UpgradeClusterOptions } from "./mod.ts";
 import { Node, NodeProvisioner } from "../node-provisioners/mod.ts";
-import { executeSSH, sh } from "../utils.ts";
+import { executeSSH, sh, yaml } from "../utils.ts";
 
 export abstract class AbstractKubernetesAdministrator implements KubernetesAdministrator {
   abstract upgradeCluster(clusterId: string, options: UpgradeClusterOptions): Promise<KubernetesAdministrator>;
@@ -202,7 +202,7 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
 
     const controlPlaneNode = await this.nodeProvisioner.provisionNode({
       mode: "manual",
-      region: "europe",
+      region: "eu",
       clusterId,
       roles: ["control-plane"],
     });
@@ -211,36 +211,34 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
     await this.installDependencies(controlPlaneNode);
 
     // Create kubeadm config file with etcd configuration
-    const kubeadmConfigYaml = `
-apiVersion: kubeadm.k8s.io/v1beta3
-kind: InitConfiguration
-nodeRegistration:
-  criSocket: unix:///var/run/containerd/containerd.sock
----
-apiVersion: kubeadm.k8s.io/v1beta3
-kind: ClusterConfiguration
-kubernetesVersion: ${k8sVersion}
-networking:
-  podSubnet: ${podCidr}
-  serviceSubnet: ${serviceCidr}
-controlPlaneEndpoint: ${controlPlaneNode.publicIp}:6443
-etcd:
-  local:
-    dataDir: ${etcdOptions.dataDir}
-    extraArgs:
-      auto-compaction-retention: "${etcdOptions.compactionRetention}"
-      quota-backend-bytes: "${etcdOptions.quotaBackendBytes}"
-      max-request-bytes: "${etcdOptions.maxRequestBytes}"
-      metrics: "${etcdOptions.metrics}"
-certificatesDir: /etc/kubernetes/pki
-`;
+    const kubeadmConfigYaml = yaml`
+      apiVersion: kubeadm.k8s.io/v1beta3
+      kind: InitConfiguration
+      nodeRegistration:
+        criSocket: unix:///var/run/containerd/containerd.sock
+      ---
+      apiVersion: kubeadm.k8s.io/v1beta3
+      kind: ClusterConfiguration
+      kubernetesVersion: ${k8sVersion}
+      networking:
+        podSubnet: ${podCidr}
+        serviceSubnet: ${serviceCidr}
+      controlPlaneEndpoint: ${controlPlaneNode.publicIp}:6443
+      etcd:
+        local:
+          dataDir: ${etcdOptions.dataDir}
+          extraArgs:
+            auto-compaction-retention: "${etcdOptions.compactionRetention}"
+            quota-backend-bytes: "${etcdOptions.quotaBackendBytes}"
+            max-request-bytes: "${etcdOptions.maxRequestBytes}"
+            metrics: "${etcdOptions.metrics}"
+      certificatesDir: /etc/kubernetes/pki
+    `;
 
     // Write the kubeadm config to a file on the node
     await executeSSH(
       controlPlaneNode.publicIp,
-      sh`cat > /tmp/kubeadm-config.yaml << 'EOF'
-${kubeadmConfigYaml}
-EOF`
+      sh`cat > /tmp/kubeadm-config.yaml <<< "${kubeadmConfigYaml}"`
     );
 
     // Initialize the cluster with kubeadm using the config file
@@ -282,7 +280,10 @@ EOF`
           await executeSSH(node.publicIp, sh`rm -rf /etc/kubernetes /var/lib/kubelet /var/lib/etcd /etc/cni/net.d`);
 
           // Deprovision the node
-          await this.nodeProvisioner.deprovisionNode(node.id);
+          await this.nodeProvisioner.deprovisionNode({
+            clusterId, 
+            nodeId: node.id
+          });
         } catch (error) {
           console.error(`Error resetting node ${node.id}: ${error}`);
         }
@@ -308,7 +309,7 @@ EOF`
     // Provision a new node
     const newNode = await this.nodeProvisioner.provisionNode({
       mode: "manual",
-      region: "europe",
+      region: "eu",
       clusterId: clusterId,
       roles: roles,
     });
@@ -380,6 +381,9 @@ EOF`
     }
 
     // Deprovision the node
-    await this.nodeProvisioner.deprovisionNode(nodeToRemove.id);
+    await this.nodeProvisioner.deprovisionNode({
+      clusterId,
+      nodeId: nodeToRemove.id
+    });
   }
 }
