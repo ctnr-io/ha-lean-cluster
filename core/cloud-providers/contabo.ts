@@ -391,7 +391,7 @@ export class ContaboProvider {
       // find the first available instance
       const availableInstance = instances.find(
         (instance) => instance.displayName === "" 
-        // && (options.productId === undefined || instance.productId === options.productId)
+        && (options.productId === undefined || instance.productId === options.productId)
         && (instance.status === "stopped" || instance.status === "running")
       );
       if (!availableInstance) {
