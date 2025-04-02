@@ -1,3 +1,4 @@
+import { PromiseExecutor } from "@trpc/server/unstable-core-do-not-import";
 import { exec as execUtil, sh } from "../utils.ts";
 import * as process from "node:process";
 
@@ -127,6 +128,59 @@ export interface ContaboPrivateNetwork {
   }[];
 }
 
+export interface ContaboTag {
+  color: string;
+  customerId: string;
+  name: string;
+  tagId: number;
+  tenantId: string;
+}
+
+export interface ContaboTagAssignment {
+  customerId: string;
+  resourceId: string;
+  resourceName: string;
+  resourceType: string;
+  tagId: number;
+  tagName: string;
+  tenantId: string;
+}
+
+type ContaboListOptions<Options extends Record<string, any> = {}> = {
+  page?: number;
+  size?: number;
+  orderBy?: `${string}:asc` | `${string}:desc`;
+} & Options;
+
+export type ContaboResourceType =
+  | "buckets"
+  | "datacenters"
+  | "image"
+  | "images"
+  | "images-stats"
+  | "instance"
+  | "instances"
+  | "object"
+  | "objectStorage"
+  | "objectStorages"
+  | "objects"
+  | "permissions"
+  | "privateNetwork"
+  | "privateNetworks"
+  | "role"
+  | "roles"
+  | "secret"
+  | "secrets"
+  | "snapshot"
+  | "snapshots"
+  | "tag"
+  | "tagAssignment"
+  | "tagAssignments"
+  | "tags"
+  | "user"
+  | "user-credentials"
+  | "users";
+
 export type ContaboSshKey = ContaboSecret & { type: "ssh" };
 
 const {
@@ -163,45 +217,49 @@ export class ContaboProvider {
     );
   }
 
-  async listInstances({ page, size }: { page?: number; size?: number }): Promise<ContaboInstance[]> {
-    const instances = JSON.parse(
+  private async execList<T>(command: string, options?: ContaboListOptions): Promise<T[]> {
+    const { page, size, orderBy } = options ?? {};
+    return JSON.parse(
       await this.exec(
         [
-          "cntb get instances --output json",
+          command,
           page !== undefined && `--page "${page}"`,
           size !== undefined && `--size "${size}"`,
+          orderBy && `--order-by "${orderBy}"`,
         ]
           .filter(Boolean)
           .join(" ")
       )
-    ) as ContaboInstance[];
-    return instances;
+    );
+  }
+
+  listInstances(options: ContaboListOptions<{ name?: string }>): Promise<ContaboInstance[]> {
+    return this.execList(
+      ["cntb get instances --output json", options.name && `--name "${options.name}"`].filter(Boolean).join(" "),
+      options
+    );
   }
 
   async setInstanceDisplayName(instanceId: number, displayName: string): Promise<void> {
     await this.exec(`cntb update instance "${instanceId}" --displayName "${displayName}"`);
   }
 
-  async listSecrets(options?: {
-    type?: "ssh" | "password";
-    name?: string;
-    page?: number;
-    size?: number;
-  }): Promise<ContaboSecret[]> {
-    const { type, name, page, size } = options ?? {};
-    return JSON.parse(
-      await this.exec(
-        [
-          "cntb get secrets --output json",
-          name && `--name ${name}`,
-          type && `--type ${type}`,
-          page !== undefined && `--page "${page}"`,
-          size !== undefined && `--size "${size}"`,
-        ]
-          .filter(Boolean)
-          .join(" ")
-      )
-    ) as ContaboSecret[];
+  listSecrets(
+    options?: ContaboListOptions<{
+      type?: "ssh" | "password";
+      name?: string;
+    }>
+  ): Promise<ContaboSecret[]> {
+    return this.execList(
+      [
+        "cntb get secrets --output json",
+        options?.type && `--type "${options.type}"`,
+        options?.name && `--name "${options.name}"`,
+      ]
+        .filter(Boolean)
+        .join(" "),
+      options
+    );
   }
 
   async getSecret(id: number): Promise<ContaboSecret> {
@@ -321,24 +379,12 @@ export class ContaboProvider {
     );
   }
 
-  async listPrivateNetworks(options?: {
-    name?: string;
-    page?: number;
-    size?: number;
-  }): Promise<ContaboPrivateNetwork[]> {
-    const { name, page, size } = options ?? {};
-    return JSON.parse(
-      await this.exec(
-        [
-          "cntb get privateNetworks --output json",
-          name && `--name "${name}"`,
-          page && `--page ${page}`,
-          size && `--size ${size}`,
-        ]
-          .filter(Boolean)
-          .join(" ")
-      )
-    ) as ContaboPrivateNetwork[];
+  listPrivateNetworks(options?: ContaboListOptions<{ name?: string }>): Promise<ContaboPrivateNetwork[]> {
+    const { name } = options ?? {};
+    return this.execList(
+      ["cntb get privateNetworks --output json", name && `--name "${name}"`].filter(Boolean).join(" "),
+      options
+    );
   }
 
   async getPrivateNetwork(privateNetworkId: number): Promise<ContaboPrivateNetwork> {
@@ -365,6 +411,60 @@ export class ContaboProvider {
     await this.exec(`cntb delete privateNetwork "${privateNetworkId}"`);
   }
 
+  async createTag(options: { name: string; color?: string }): Promise<number> {
+    return parseInt(
+      await this.exec(`cntb create tag --name "${options.name}" ${options.color ? `--color "${options.color}"` : ""}`)
+    );
+  }
+
+  async deleteTag(tagId: number): Promise<void> {
+    await this.exec(`cntb delete tag "${tagId}"`);
+  }
+
+  listTags(options: ContaboListOptions<{ tagName?: string }>): Promise<ContaboTag[]> {
+    return this.execList(
+      ["cntb get tags --output json", options.tagName && `--tagName "${options.tagName}"`].filter(Boolean).join(" "),
+      options
+    );
+  }
+
+  async getTag(tagId: number): Promise<ContaboTag> {
+    return JSON.parse(await this.exec(`cntb get tag --output json "${tagId}"`))[0] as ContaboTag;
+  }
+
+  async createTagAssignment(options: {
+    tagId: number;
+    resourceType: ContaboResourceType;
+    resourceId: number;
+  }): Promise<void> {
+    const { tagId, resourceType, resourceId } = options;
+    await this.exec(`cntb create tagAssignment "${tagId}" "${resourceType}" "${resourceId}"`);
+  }
+
+  async deleteTagAssignment(options: {
+    tagId: number;
+    resourceType: ContaboResourceType;
+    resourceId: number;
+  }): Promise<void> {
+    const { tagId, resourceType, resourceId } = options;
+    await this.exec(`cntb delete tagAssignment "${tagId}" "${resourceType}" "${resourceId}"`);
+  }
+
+  listTagAssignments(
+    options: ContaboListOptions<{ tagId?: number; resourceType?: ContaboResourceType; }>
+  ): Promise<ContaboTagAssignment[]> {
+    return this.execList(
+      [
+        "cntb get tagAssignments --output json",
+        options.tagId && `--tagId "${options.tagId}"`,
+        options.resourceType && `--resourceType "${options.resourceType}"`,
+      ]
+        .filter(Boolean)
+        .join(" "),
+      options
+    );
+  }
+
   // helpers
   public async resetInstance(instanceId: number): Promise<void> {
     await this.setInstanceDisplayName(instanceId, "");
@@ -382,18 +482,27 @@ export class ContaboProvider {
     }
   }
 
-  private async getAvailableInstance(options: { displayName: string, productId?: ContaboProductId }): Promise<ContaboInstance | null> {
+  private async getAvailableInstance(options: {
+    displayName: string;
+    productId?: ContaboProductId;
+    preferedDataCenter?: string;
+  }): Promise<ContaboInstance | null> {
     for (let page = 1; page < Infinity; page++) {
       const instances = await this.listInstances({ page });
       if (instances.length === 0) {
         return null;
       }
-      // find the first available instance
-      const availableInstance = instances.find(
-        (instance) => instance.displayName === "" 
-        && (options.productId === undefined || instance.productId === options.productId)
-        && (instance.status === "stopped" || instance.status === "running")
-      );
+      // find the first available instance, prefer with same datacenter
+      let availableInstances = instances
+      if (options.preferedDataCenter) {
+        availableInstances = availableInstances.sort((a) => options.preferedDataCenter?.localeCompare(a.dataCenter ?? "") ?? 1)
+      }
+      const availableInstance = availableInstances.find(
+          (instance) =>
+            instance.displayName === "" &&
+            (options.productId === undefined || instance.productId === options.productId) &&
+            (instance.status === "stopped" || instance.status === "running")
+        );
       if (!availableInstance) {
         return null;
       }
@@ -410,6 +519,50 @@ export class ContaboProvider {
       return availableInstance;
     }
     return null;
+  }
+
+  async ensureTag(options: { name: string; color?: string }): Promise<number> {
+    const { name, color } = options;
+    const tags = await this.listTags({ tagName: name });
+    if (tags.length === 0) {
+      return await this.createTag({ name, color });
+    }
+    return tags[0].tagId;
+  }
+
+  async assignTag(options: {
+    name: string;
+    color?: string;
+    resourceType: ContaboResourceType;
+    resourceId: number;
+  }): Promise<number> {
+    const { name, color, resourceType, resourceId } = options;
+    const tagId = await this.ensureTag({ name, color });
+    const tagAssignments = await this.listTagAssignments({
+      tagId,
+      resourceType,
+    });
+    if (tagAssignments.length === 0) {
+      await this.createTagAssignment({ tagId, resourceType, resourceId });
+    }
+    return tagId
+  }
+
+  async unassignTag(options: {
+    name: string;
+    color?: string;
+    resourceType: ContaboResourceType;
+    resourceId: number;
+  }): Promise<void> {
+    const { name, color, resourceType, resourceId } = options;
+    const tagId = await this.ensureTag({ name, color });
+    const tagAssignments = await this.listTagAssignments({
+      tagId,
+      resourceType,
+    });
+    if (tagAssignments.length > 0) {
+      await this.deleteTagAssignment({ tagId, resourceType, resourceId });
+    }
   }
 
   async ensureSshKey(options: { name: string; value: string }): Promise<number> {
@@ -435,6 +588,7 @@ export class ContaboProvider {
     sshKeys: number[];
     productId: ContaboProductId;
     privateNetworks: number[];
+    preferedDataCenter?: string;
   }): Promise<number> {
     const { provisioning, productId, displayName, sshKeys, privateNetworks } = options;
     let instance: ContaboInstance | undefined | null = undefined;
@@ -483,6 +637,7 @@ export class ContaboProvider {
     if (instance.displayName !== displayName) {
       await this.setInstanceDisplayName(instanceId, displayName);
     }
+
     return instanceId;
   }
 }

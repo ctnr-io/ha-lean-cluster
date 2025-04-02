@@ -1,8 +1,7 @@
 import { describe, it } from "@std/testing/bdd";
-import { ContaboPrivateNetwork, ContaboProvider, ContaboSecret, ContaboInstance } from "./contabo.ts";
+import { ContaboProvider, ContaboInstance } from "./contabo.ts";
 import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
 import { randomUUID } from "node:crypto";
-import { executeSSH } from "../utils.ts";
 
 // Load SSH public key for testing
 const SSH_PUBLIC_KEY = Deno.readTextFileSync("public.key");
