@@ -14,6 +14,7 @@ const contaboNodeProvisioner = new ContaboNodeProvisioner(contaboProvider);
 // Create a test domain name
 const testDomainName = `test-${new Date().getTime()}.example.com`;
 
+
 // Create a kubernetes administrator
 const k8sAdmin = createKubernetesAdministrator("1.32", contaboNodeProvisioner);
 
@@ -25,7 +26,17 @@ async function cleanup() {
   if (testClusterId) {
     try {
       console.info("Cleaning up test cluster:", testClusterId);
-      await k8sAdmin.deleteCluster(testClusterId);
+      // Get nodes by tags
+      const nodes = await contaboNodeProvisioner.listNodes({ 
+        clusterId: testClusterId,
+      });
+      // Delete all nodes
+      for (const node of nodes) {
+        await contaboNodeProvisioner.deprovisionNode({
+          clusterId: testClusterId,
+          nodeId: node.id,
+        });
+      }
     } catch (error) {
       console.error("Error during cleanup:", error);
     }
@@ -35,7 +46,7 @@ async function cleanup() {
 describe(
   "Kubernetes Administrator",
   {
-    beforeAll: cleanup,
+    // beforeAll: cleanup,
     afterAll: cleanup,
     sanitizeOps: true,
     sanitizeResources: true,

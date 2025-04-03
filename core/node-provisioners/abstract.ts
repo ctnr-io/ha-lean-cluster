@@ -5,12 +5,10 @@ DeprovisionNodeOptions,
   GetNodeOptions,
   ListNodeOptions,
   Node,
-  NodeProvider,
   NodeProviderSlug,
   NodeProvisioner,
   ProvisionNodeOptions,
 } from "./mod.ts";
-import { decodeBase64, encodeBase64 } from "jsr:@std/encoding/base64";
 
 export class NodeProvisioningReportError extends Error {
   constructor(

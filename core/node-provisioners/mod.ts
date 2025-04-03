@@ -26,6 +26,7 @@ export interface ProvisionNodeOptions {
   mode: "auto" | "manual";
   region: "eu";
   clusterId: string;
+  peerNodesIds?: string[];
   roles: NodeRoles;
 }
 

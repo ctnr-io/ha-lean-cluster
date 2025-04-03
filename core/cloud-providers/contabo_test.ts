@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 const SSH_PUBLIC_KEY = Deno.readTextFileSync("public.key");
 
 // Generate a unique test ID with timestamp
-const testId = `test=${randomUUID()} ts=${new Date().getTime()}`;
+const testId = `test=contabo-provider id=${randomUUID()} ts=${new Date().getTime()}`;
 const provider = new ContaboProvider();
 
 // Test instance variables

@@ -2,11 +2,16 @@
   "tasks": {
     "api": "deno run --watch api/trpc.ts",
     "cli": "deno run -A api/cli.ts",
-    "test:api": "deno test -A --watch --unstable api"
+    "test:api": "deno test -A --watch --unstable api",
+    "gen:core": "deno run -A core/generate.ts"
   },
   "imports": {
+    "@hey-api/client-fetch": "npm:@hey-api/client-fetch@^0.10.0",
+    "@hey-api/openapi-ts": "npm:@hey-api/openapi-ts@^0.66.1",
+    "@openapis/contabo": "jsr:@openapis/contabo@^1.0.0",
     "@std/assert": "jsr:@std/assert@^1.0.12",
     "@std/testing": "jsr:@std/testing@^1.0.10",
+    "@std/yaml": "jsr:@std/yaml@^1.0.5",
     "@trpc/server": "npm:@trpc/server@^11.0.0",
     "trpc-cli": "npm:trpc-cli@^0.6.0-7",
     "ts-to-zod": "npm:ts-to-zod@^3.15.0",

@@ -95,7 +95,7 @@ Object.entries(provisioners).forEach(([provider, provisioner]) => {
           clusterId,
           roles: ["control-plane"],
         });
-        
+
         // Verify node was provisioned
         assertExists(node.id);
         console.info(`Provisioned node with ID: ${node.id}`);

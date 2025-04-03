@@ -1,6 +1,8 @@
-import { PromiseExecutor } from "@trpc/server/unstable-core-do-not-import";
 import { exec as execUtil, sh } from "../utils.ts";
 import * as process from "node:process";
+import { existsSync, readFileSync } from "node:fs";
+import * as YAML from "@std/yaml";
+import * as ContaboOpenAPI from '@openapis/contabo'
 
 export interface ContaboOauth {
   clientId: string;
@@ -152,55 +154,55 @@ type ContaboListOptions<Options extends Record<string, any> = {}> = {
   orderBy?: `${string}:asc` | `${string}:desc`;
 } & Options;
 
-export type ContaboResourceType =
-  | "buckets"
-  | "datacenters"
-  | "image"
-  | "images"
-  | "images-stats"
-  | "instance"
-  | "instances"
-  | "object"
-  | "objectStorage"
-  | "objectStorages"
-  | "objects"
-  | "permissions"
-  | "privateNetwork"
-  | "privateNetworks"
-  | "role"
-  | "roles"
-  | "secret"
-  | "secrets"
-  | "snapshot"
-  | "snapshots"
-  | "tag"
-  | "tagAssignment"
-  | "tagAssignments"
-  | "tags"
-  | "user"
-  | "user-credentials"
-  | "users";
+export type ContaboTagAssignmentResourceType = "instance" | "image" | "object-storage";
 
 export type ContaboSshKey = ContaboSecret & { type: "ssh" };
 
-const {
-  CNTB_CLIENT_SECRET = "",
-  CNTB_CLIENT_ID = "",
-  CNTB_PASSWORD = "",
-  CNTB_TOKEN_URL = "",
-  CNTB_USER = "",
-} = process.env;
-
 export class ContaboProvider {
-  constructor(
-    private oauth: ContaboOauth = {
-      clientSecret: CNTB_CLIENT_SECRET,
+  constructor(private oauth: Partial<ContaboOauth> = {}) {
+    const { CNTB_CLIENT_SECRET, CNTB_CLIENT_ID, CNTB_PASSWORD, CNTB_TOKEN_URL, CNTB_USER } = process.env;
+    const envConfig = {
       clientId: CNTB_CLIENT_ID,
-      password: CNTB_PASSWORD,
+      clientSecret: CNTB_CLIENT_SECRET,
       tokenUrl: CNTB_TOKEN_URL,
-      user: CNTB_USER,
+      username: CNTB_USER,
+      password: CNTB_PASSWORD,
+    };
+
+    // Read from ~/.cntb.yaml
+    let configData: {
+      "oauth2-clientid"?: string;
+      "oauth2-client-secret"?: string;
+      "oauth2-user"?: string;
+      "oauth2-password"?: string;
+      "oauth2-tokenurl"?: string;
+      api?: string;
+    } = {};
+    if (existsSync(process.env.HOME + "/.cntb.yaml")) {
+      const config = readFileSync(process.env.HOME + "/.cntb.yaml", "utf8");
+      configData = YAML.parse(config) as {
+        "oauth2-clientid": string;
+        "oauth2-client-secret": string;
+        "oauth2-user": string;
+        "oauth2-password": string;
+        "oauth2-tokenurl": string;
+        api: string;
+      };
     }
-  ) {}
+    const fileConfig = {
+      clientId: configData["oauth2-clientid"],
+      clientSecret: configData["oauth2-client-secret"],
+      tokenUrl: configData["oauth2-tokenurl"],
+      username: configData["oauth2-user"],
+      password: configData["oauth2-password"],
+    };
+
+    this.oauth = {
+      ...fileConfig,
+      ...envConfig,
+      ...oauth,
+    };
+  }
 
   private async exec(command: string): Promise<string> {
     return execUtil(
@@ -434,7 +436,7 @@ export class ContaboProvider {
 
   async createTagAssignment(options: {
     tagId: number;
-    resourceType: ContaboResourceType;
+    resourceType: ContaboTagAssignmentResourceType;
     resourceId: number;
   }): Promise<void> {
     const { tagId, resourceType, resourceId } = options;
@@ -443,22 +445,20 @@ export class ContaboProvider {
 
   async deleteTagAssignment(options: {
     tagId: number;
-    resourceType: ContaboResourceType;
-    resourceId: number;
+    resourceType: ContaboTagAssignmentResourceType;
+    resourceId: string;
   }): Promise<void> {
     const { tagId, resourceType, resourceId } = options;
     await this.exec(`cntb delete tagAssignment "${tagId}" "${resourceType}" "${resourceId}"`);
   }
 
-  listTagAssignments(
-    options: ContaboListOptions<{ tagId?: number; resourceType?: ContaboResourceType; }>
+  async listTagAssignments(
+    options: ContaboListOptions<{
+      tagId?: number;
+    }>
   ): Promise<ContaboTagAssignment[]> {
     return this.execList(
-      [
-        "cntb get tagAssignments --output json",
-        options.tagId && `--tagId "${options.tagId}"`,
-        options.resourceType && `--resourceType "${options.resourceType}"`,
-      ]
+      ["cntb get tagAssignments --output json", options.tagId && `--tagId "${options.tagId}"`]
         .filter(Boolean)
         .join(" "),
       options
@@ -469,6 +469,14 @@ export class ContaboProvider {
   public async resetInstance(instanceId: number): Promise<void> {
     await this.setInstanceDisplayName(instanceId, "");
     await this.stopInstance(instanceId).catch(() => {});
+    const tags = await this.listTags({ tagName: instanceId.toString(), page: 1, size: 1000 });
+    for (const tag of tags) {
+      await this.unassignTag({
+        name: tag.name,
+        resourceType: "instance",
+        resourceId: instanceId.toString(),
+      });
+    }
   }
 
   private async resetInstanceWithDisplayName(displayName: string): Promise<void> {
@@ -493,16 +501,18 @@ export class ContaboProvider {
         return null;
       }
       // find the first available instance, prefer with same datacenter
-      let availableInstances = instances
+      let availableInstances = instances;
       if (options.preferedDataCenter) {
-        availableInstances = availableInstances.sort((a) => options.preferedDataCenter?.localeCompare(a.dataCenter ?? "") ?? 1)
+        availableInstances = availableInstances.sort(
+          (a) => options.preferedDataCenter?.localeCompare(a.dataCenter ?? "") ?? 1
+        );
       }
       const availableInstance = availableInstances.find(
-          (instance) =>
-            instance.displayName === "" &&
-            (options.productId === undefined || instance.productId === options.productId) &&
-            (instance.status === "stopped" || instance.status === "running")
-        );
+        (instance) =>
+          instance.displayName === "" &&
+          (options.productId === undefined || instance.productId === options.productId) &&
+          (instance.status === "stopped" || instance.status === "running")
+      );
       if (!availableInstance) {
         return null;
       }
@@ -533,32 +543,29 @@ export class ContaboProvider {
   async assignTag(options: {
     name: string;
     color?: string;
-    resourceType: ContaboResourceType;
+    resourceType: ContaboTagAssignmentResourceType;
     resourceId: number;
   }): Promise<number> {
     const { name, color, resourceType, resourceId } = options;
     const tagId = await this.ensureTag({ name, color });
     const tagAssignments = await this.listTagAssignments({
       tagId,
-      resourceType,
     });
     if (tagAssignments.length === 0) {
       await this.createTagAssignment({ tagId, resourceType, resourceId });
     }
-    return tagId
+    return tagId;
   }
 
   async unassignTag(options: {
     name: string;
-    color?: string;
-    resourceType: ContaboResourceType;
-    resourceId: number;
+    resourceType: ContaboTagAssignmentResourceType;
+    resourceId: string;
   }): Promise<void> {
-    const { name, color, resourceType, resourceId } = options;
-    const tagId = await this.ensureTag({ name, color });
+    const { name, resourceType, resourceId } = options;
+    const tagId = await this.ensureTag({ name });
     const tagAssignments = await this.listTagAssignments({
       tagId,
-      resourceType,
     });
     if (tagAssignments.length > 0) {
       await this.deleteTagAssignment({ tagId, resourceType, resourceId });
@@ -627,6 +634,18 @@ export class ContaboProvider {
         this.assignPrivateNetwork(privateNetworkId, instance.instanceId).catch(() => {})
       )
     );
+
+
+    // assign tags if any and if not
+    await Promise.all(
+      options.tags.map((tag) =>
+        this.assignTag({
+          name: tag,
+          resourceType: "instance",
+          resourceId: instance.instanceId,
+        })
+      )
+    )
 
     // reinstall instance
     const instanceId = await this.reinstallInstance({

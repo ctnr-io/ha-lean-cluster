@@ -161,6 +161,7 @@ export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
     const privateNetworks = await this.provider.listPrivateNetworks({
       name: `cluster=${options.clusterId}`,
     });
+
     const [privateNetwork, instance] =
       privateNetworks
         .map((privateNetwork) => {
@@ -170,10 +171,17 @@ export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
           return [privateNetwork, instance] as const;
         })
         .shift() ?? [];
+
     if (!privateNetwork || !instance) {
       throw new Error(`Instance not found`);
     }
     await this.provider.unassignPrivateNetwork(privateNetwork.privateNetworkId, instance.instanceId).catch(() => {});
+
+    // Delete private network if it has no instances left
+    if (privateNetwork.instances.length === 1) {
+      await this.provider.deletePrivateNetwork(privateNetwork.privateNetworkId);
+    }
+    
     await this.provider.resetInstance(instance.instanceId);
   }
 
