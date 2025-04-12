@@ -636,16 +636,6 @@ export class ContaboProvider {
     );
 
 
-    // assign tags if any and if not
-    await Promise.all(
-      options.tags.map((tag) =>
-        this.assignTag({
-          name: tag,
-          resourceType: "instance",
-          resourceId: instance.instanceId,
-        })
-      )
-    )
 
     // reinstall instance
     const instanceId = await this.reinstallInstance({

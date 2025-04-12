@@ -1,13 +1,13 @@
 import { describe, it } from "@std/testing/bdd";
 import { ContaboProvider, ContaboInstance } from "./contabo.ts";
 import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
-import { randomUUID } from "node:crypto";
+import { hash, randomUUID } from "node:crypto";
 
 // Load SSH public key for testing
 const SSH_PUBLIC_KEY = Deno.readTextFileSync("public.key");
 
 // Generate a unique test ID with timestamp
-const testId = `test=contabo-provider id=${randomUUID()} ts=${new Date().getTime()}`;
+const testId = `test=contabo-provider id=${hash('sha256', randomUUID(), 'hex').substring(0, 8)} ts=${new Date().getTime()}`;
 const provider = new ContaboProvider();
 
 // Test instance variables

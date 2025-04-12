@@ -175,14 +175,14 @@ export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
     if (!privateNetwork || !instance) {
       throw new Error(`Instance not found`);
     }
-    await this.provider.unassignPrivateNetwork(privateNetwork.privateNetworkId, instance.instanceId).catch(() => {});
+    await this.provider.unassignPrivateNetwork(privateNetwork.privateNetworkId, instance.instanceId).catch(console.warn);
 
     // Delete private network if it has no instances left
     if (privateNetwork.instances.length === 1) {
-      await this.provider.deletePrivateNetwork(privateNetwork.privateNetworkId);
+      await this.provider.deletePrivateNetwork(privateNetwork.privateNetworkId).catch(console.warn);
     }
     
-    await this.provider.resetInstance(instance.instanceId);
+    await this.provider.resetInstance(instance.instanceId).catch(console.warn);
   }
 
   async listNodes(options: ListNodeOptions): Promise<Node[]> {
