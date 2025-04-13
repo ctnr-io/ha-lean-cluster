@@ -3,7 +3,7 @@ import { executeSSH, exec } from "../utils.ts";
 import {
 DeprovisionNodeOptions,
   GetNodeOptions,
-  ListNodeOptions,
+  ListNodesOptions,
   Node,
   NodeProviderSlug,
   NodeProvisioner,
@@ -24,10 +24,6 @@ export class NodeProvisioningReportError extends Error {
   }
 }
 export abstract class AbstractNodeProvisioner implements NodeProvisioner {
-  protected static generateNodeNetworkId(): string {
-    return hash("sha256", randomBytes(32), "hex").substring(0, 8);
-  }
-
   protected static generateNodeId(): string {
     return hash("sha256", randomBytes(32), "hex").substring(0, 8);
   }
@@ -53,7 +49,7 @@ export abstract class AbstractNodeProvisioner implements NodeProvisioner {
    */
   protected async checkNodeProvisioning(options: { node: Node; peerNodes: Node[] }): Promise<void> {
     const { node, peerNodes } = options;
-    const createPingCommand = (ip: string) => `timeout 60s /bin/sh -c 'while ! ping -c 1 ${ip}; do sleep 1; done'`;
+    const createPingCommand = (ip: string) => `timeout 60s /bin/sh -c \'while ! ping -c 1 ${ip}; do sleep 1; done\'`;
     const internetPingCommand = createPingCommand(node.publicIp);
     const checks = [
       // Check that the node is reachable from internet
@@ -78,7 +74,7 @@ export abstract class AbstractNodeProvisioner implements NodeProvisioner {
         }),
       // Check that the node is reachable by other node through its private network
       ...peerNodes
-        .filter((n) => n.networkId === node.networkId)
+        .filter((n) => n.networkCIDR === node.networkCIDR)
         .map((peerNode) => async () => {
           const command = createPingCommand(peerNode.privateIp);
           await executeSSH(node.publicIp, command).catch((cause) => {
@@ -93,7 +89,7 @@ export abstract class AbstractNodeProvisioner implements NodeProvisioner {
         }),
       // Check that the node is reachable by other node through public network
       ...peerNodes
-        .filter((n) => n.networkId !== node.networkId)
+        .filter((n) => n.networkCIDR !== node.networkCIDR)
         .map((peerNode) => async () => {
           const command = createPingCommand(peerNode.publicIp);
           await executeSSH(node.publicIp, command).catch((cause) => {
@@ -115,6 +111,6 @@ export abstract class AbstractNodeProvisioner implements NodeProvisioner {
 
   abstract provisionNode(options: ProvisionNodeOptions): Promise<Node>;
   abstract deprovisionNode(options: DeprovisionNodeOptions): Promise<void>;
-  abstract listNodes(options: ListNodeOptions): Promise<Node[]>;
+  abstract listNodes(options: ListNodesOptions): Promise<Node[]>;
   abstract getNode(options: GetNodeOptions): Promise<Node>;
 }

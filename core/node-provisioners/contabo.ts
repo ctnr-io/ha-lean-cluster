@@ -2,7 +2,7 @@ import { readFile } from "../utils.ts";
 import {
   DeprovisionNodeOptions,
   GetNodeOptions,
-  ListNodeOptions,
+  ListNodesOptions,
   Node,
   NodeRoles,
   ProvisionNodeOptions,
@@ -66,7 +66,6 @@ export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
     const { clusterId, privateNetwork, instance } = options;
     return {
       clusterId: clusterId,
-      networkId: ContaboNodeProvisioner.getNetworkIdFromPrivateNetwork(privateNetwork),
       id: ContaboNodeProvisioner.getNodeIdFromInstance(instance),
       publicIp: instance.ipConfig.v4.ip,
       privateIp: instance.privateIpConfig.v4[0].ip,
@@ -90,11 +89,16 @@ export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
         const bIndex = NodeRoles.indexOf(b);
         return aIndex - bIndex;
       });
+
+      // Create private network if it doesn't exist
       const privateNetworkId = await this.provider.ensurePrivateNetwork({
-        name: [`cluster=${options.clusterId}`, `network=${ContaboNodeProvisioner.generateNodeNetworkId()}`].join(" "),
+        name: `cluster=${options.clusterId}`,
         region,
       });
+
       const nodeId = ContaboNodeProvisioner.generateNodeId();
+
+      // Create instance if it doesn't exist and reinstall it
       const instanceId = await this.provider.ensureInstance({
         provisioning: "manual",
         displayName: [
@@ -147,7 +151,7 @@ export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
               .join(" ")
           );
           console.error(`Node checks failed: ${error}, retrying...`);
-          continue
+          continue;
         } else {
           throw error;
         }
@@ -175,22 +179,25 @@ export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
     if (!privateNetwork || !instance) {
       throw new Error(`Instance not found`);
     }
-    await this.provider.unassignPrivateNetwork(privateNetwork.privateNetworkId, instance.instanceId).catch(console.warn);
+
+    await this.provider
+      .unassignPrivateNetwork(privateNetwork.privateNetworkId, instance.instanceId)
+      .catch(console.warn);
 
     // Delete private network if it has no instances left
     if (privateNetwork.instances.length === 1) {
       await this.provider.deletePrivateNetwork(privateNetwork.privateNetworkId).catch(console.warn);
     }
-    
+
     await this.provider.resetInstance(instance.instanceId).catch(console.warn);
   }
 
-  async listNodes(options: ListNodeOptions): Promise<Node[]> {
+  async listNodes(options: ListNodesOptions): Promise<Node[]> {
     const privateNetworks = await this.provider.listPrivateNetworks({ name: `cluster=${options.clusterId}` });
     return privateNetworks
       .map((privateNetwork) =>
         privateNetwork.instances
-          .filter((instance) => !instance.displayName.includes(`error=`))
+          .filter((instance) => options.withError || !instance.displayName.includes(`error=`))
           .map((instance) => {
             return ContaboNodeProvisioner.transformPrivateNetworkInstanceToNode({
               clusterId: options.clusterId,

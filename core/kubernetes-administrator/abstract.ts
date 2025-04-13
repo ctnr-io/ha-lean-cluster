@@ -182,23 +182,22 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
    */
   protected abstract installDependencies(node: Node): Promise<void>;
 
-  async createCluster(options: CreateClusterOptions): Promise<string> {
+  async initCluster(options: CreateClusterOptions): Promise<string> {
     const { 
       cni = "calico", 
       podCidr = "10.244.0.0/16", 
       serviceCidr = "10.96.0.0/12",
       etcdOptions = {
         dataDir: "/var/lib/etcd",
-        compactionRetention: 0,
-        quotaBackendBytes: "2147483648", // 2GB
-        maxRequestBytes: "1572864",
+        compactionRetention: 1, // daily compaction
+        quotaBackendBytes: 8589934592,  // 8 GiB (max recommended)
+        maxRequestBytes: 1572864,
         metrics: "basic"
-      }
+      },
+      clusterId = AbstractKubernetesAdministrator.generateClusterId(),
     } = options;
 
     const k8sVersion = this.getVersion();
-
-    const clusterId = AbstractKubernetesAdministrator.generateClusterId();
 
     const controlPlaneNode = await this.nodeProvisioner.provisionNode({
       mode: "manual",
@@ -212,39 +211,44 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
 
     // Create kubeadm config file with etcd configuration
     const kubeadmConfigYaml = yaml`
-      apiVersion: kubeadm.k8s.io/v1beta3
+      apiVersion: kubeadm.k8s.io/v1beta4
       kind: InitConfiguration
       nodeRegistration:
         criSocket: unix:///var/run/containerd/containerd.sock
       ---
-      apiVersion: kubeadm.k8s.io/v1beta3
+      apiVersion: kubeadm.k8s.io/v1beta4
       kind: ClusterConfiguration
-      kubernetesVersion: ${k8sVersion}
+      kubernetesVersion: "v${k8sVersion}.0"
       networking:
-        podSubnet: ${podCidr}
-        serviceSubnet: ${serviceCidr}
-      controlPlaneEndpoint: ${controlPlaneNode.publicIp}:6443
+        podSubnet: "${podCidr}"
+        serviceSubnet: "${serviceCidr}"
+      controlPlaneEndpoint: "${controlPlaneNode.publicIp}:6443"
       etcd:
         local:
-          dataDir: ${etcdOptions.dataDir}
+          dataDir: "${etcdOptions.dataDir}"
           extraArgs:
-            auto-compaction-retention: "${etcdOptions.compactionRetention}"
-            quota-backend-bytes: "${etcdOptions.quotaBackendBytes}"
-            max-request-bytes: "${etcdOptions.maxRequestBytes}"
-            metrics: "${etcdOptions.metrics}"
+            - name: auto-compaction-retention
+              value: "${etcdOptions.compactionRetention}"
+            - name: quota-backend-bytes
+              value: "${etcdOptions.quotaBackendBytes}"
+            - name: max-request-bytes
+              value: "${etcdOptions.maxRequestBytes}"
+            - name: metrics
+              value: "${etcdOptions.metrics}"
       certificatesDir: /etc/kubernetes/pki
     `;
 
     // Write the kubeadm config to a file on the node
     await executeSSH(
       controlPlaneNode.publicIp,
-      sh`cat > /tmp/kubeadm-config.yaml <<< "${kubeadmConfigYaml}"`
+      sh`cat > /tmp/kubeadm-config.yaml`,
+      kubeadmConfigYaml
     );
 
     // Initialize the cluster with kubeadm using the config file
     await executeSSH(
       controlPlaneNode.publicIp,
-      sh`kubeadm init --config=/tmp/kubeadm-config.yaml --upload-cert`
+      sh`kubeadm init --config=/tmp/kubeadm-config.yaml --upload-certs`
     );
 
     // Install CNI

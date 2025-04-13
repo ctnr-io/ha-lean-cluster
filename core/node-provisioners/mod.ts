@@ -6,13 +6,6 @@ export interface Node {
   id: string;
   publicIp: string;
   privateIp: string;
-  /*
-   * The network ID
-   * Determine which node can communicate with which other nodes internally
-   * Node communicating internally don't pay for bandwidth
-   * It also improve node communication speed
-   */
-  networkId: string;
   networkCIDR: string;
   roles: NodeRoles;
 }
@@ -38,8 +31,9 @@ export interface DeprovisionNodeOptions {
 export type NodeRegion = "eu";
 export type NodeProviderSlug = 'cntb';
 
-export interface ListNodeOptions {
+export interface ListNodesOptions {
   clusterId: string;
+  withError?: boolean;
 }
 
 export interface GetNodeOptions {
@@ -50,7 +44,7 @@ export interface GetNodeOptions {
 export interface NodeProvisioner {
   provisionNode: (options: ProvisionNodeOptions) => Promise<Node>;
   deprovisionNode: (options: DeprovisionNodeOptions) => Promise<void>;
-  listNodes: (options: ListNodeOptions) => Promise<Node[]>;
+  listNodes: (options: ListNodesOptions) => Promise<Node[]>;
   getNode: (options: GetNodeOptions) => Promise<Node>;
 }
 

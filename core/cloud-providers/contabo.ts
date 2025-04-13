@@ -2,7 +2,7 @@ import { exec as execUtil, sh } from "../utils.ts";
 import * as process from "node:process";
 import { existsSync, readFileSync } from "node:fs";
 import * as YAML from "@std/yaml";
-import * as ContaboOpenAPI from '@openapis/contabo'
+import * as ContaboOpenAPI from "@openapis/contabo";
 
 export interface ContaboOauth {
   clientId: string;
@@ -291,15 +291,7 @@ export class ContaboProvider {
     const instanceId = parseInt(
       await this.exec(
         sh`
-          cntb create \
-          instance \ 
-          --region EU \
-          --defaultUser root \
-          --imageId d64d5c6c-9dda-4e38-8174-0ee282474d8a \
-          ${sshKeys.length > 0 ? `--sshKeys ${sshKeys.join(",")}` : ""} \
-          --productId ${productId} \
-          --displayName "${displayName}" \
-          --output json
+          cntb create instance --region EU --defaultUser root --imageId d64d5c6c-9dda-4e38-8174-0ee282474d8a ${sshKeys.length > 0 ? `--sshKeys ${sshKeys.join(",")}` : ""} --productId ${productId} --displayName "${displayName}" --output json
         `
       )
     );
@@ -318,14 +310,7 @@ export class ContaboProvider {
     const { instanceId, sshKeys } = options;
     await this.exec(
       sh`
-        cntb \
-        reinstall \ 
-        instance \
-        "${instanceId}" \
-        --defaultUser root \
-        --imageId d64d5c6c-9dda-4e38-8174-0ee282474d8a \
-        ${sshKeys.length > 0 ? `--sshKeys ${sshKeys.join(",")}` : ""} \
-        --output json
+        cntb reinstall instance "${instanceId}" --defaultUser root --imageId d64d5c6c-9dda-4e38-8174-0ee282474d8a ${sshKeys.length > 0 ? `--sshKeys ${sshKeys.join(",")}` : ""} --output json
       `
     );
     // wait for the instance to be ready
@@ -452,7 +437,7 @@ export class ContaboProvider {
     await this.exec(`cntb delete tagAssignment "${tagId}" "${resourceType}" "${resourceId}"`);
   }
 
-  async listTagAssignments(
+  listTagAssignments(
     options: ContaboListOptions<{
       tagId?: number;
     }>
@@ -469,14 +454,6 @@ export class ContaboProvider {
   public async resetInstance(instanceId: number): Promise<void> {
     await this.setInstanceDisplayName(instanceId, "");
     await this.stopInstance(instanceId).catch(() => {});
-    const tags = await this.listTags({ tagName: instanceId.toString(), page: 1, size: 1000 });
-    for (const tag of tags) {
-      await this.unassignTag({
-        name: tag.name,
-        resourceType: "instance",
-        resourceId: instanceId.toString(),
-      });
-    }
   }
 
   private async resetInstanceWithDisplayName(displayName: string): Promise<void> {
@@ -531,46 +508,56 @@ export class ContaboProvider {
     return null;
   }
 
-  async ensureTag(options: { name: string; color?: string }): Promise<number> {
-    const { name, color } = options;
-    const tags = await this.listTags({ tagName: name });
-    if (tags.length === 0) {
-      return await this.createTag({ name, color });
-    }
-    return tags[0].tagId;
-  }
+  // async ensureTag(options: { name: string; color?: string }): Promise<number> {
+  //   const { name, color } = options;
+  //   const tags = await this.listTags({ tagName: name });
+  //   if (tags.length === 0) {
+  //     return await this.createTag({ name, color });
+  //   }
+  //   return tags[0].tagId;
+  // }
 
-  async assignTag(options: {
-    name: string;
-    color?: string;
-    resourceType: ContaboTagAssignmentResourceType;
-    resourceId: number;
-  }): Promise<number> {
-    const { name, color, resourceType, resourceId } = options;
-    const tagId = await this.ensureTag({ name, color });
-    const tagAssignments = await this.listTagAssignments({
-      tagId,
-    });
-    if (tagAssignments.length === 0) {
-      await this.createTagAssignment({ tagId, resourceType, resourceId });
-    }
-    return tagId;
-  }
+  // async assignTag(options: {
+  //   name: string;
+  //   color?: string;
+  //   resourceType: ContaboTagAssignmentResourceType;
+  //   resourceId: number;
+  // }): Promise<number> {
+  //   const { name, color, resourceType, resourceId } = options;
+  //   const tagId = await this.ensureTag({ name, color });
+  //   const tagAssignments = await this.listTagAssignments({
+  //     tagId,
+  //   });
+  //   if (tagAssignments.length === 0) {
+  //     await this.createTagAssignment({ tagId, resourceType, resourceId });
+  //   }
+  //   return tagId;
+  // }
 
-  async unassignTag(options: {
-    name: string;
-    resourceType: ContaboTagAssignmentResourceType;
-    resourceId: string;
-  }): Promise<void> {
-    const { name, resourceType, resourceId } = options;
-    const tagId = await this.ensureTag({ name });
-    const tagAssignments = await this.listTagAssignments({
-      tagId,
-    });
-    if (tagAssignments.length > 0) {
-      await this.deleteTagAssignment({ tagId, resourceType, resourceId });
-    }
-  }
+  // async unassignTag(options: {
+  //   name: string;
+  //   resourceType: ContaboTagAssignmentResourceType;
+  //   resourceId: string;
+  // }): Promise<void> {
+  //   const { name, resourceType, resourceId } = options;
+  //   const tagId = await this.ensureTag({ name });
+  //   const tagAssignments = await this.listTagAssignments({
+  //     tagId,
+  //   })
+  //   if (tagAssignments.length > 0) {
+  //     await this.deleteTagAssignment({ tagId, resourceType, resourceId });
+  //   }
+  // }
+
+  // async listAssignedTags(options: ContaboListOptions<{ tag: string }>): Promise<ContaboTagAssignment[]> {
+  //   const { tag } = options;
+  //   const [{ tagId }] = (await this.listTags({ tagName: tag })) ?? [{}];
+  //   if (tagId === undefined) {
+  //     return [];
+  //   }
+  //   const tagAssignments = await this.listTagAssignments({ tagId, ...options });
+  //   return tagAssignments;
+  // }
 
   async ensureSshKey(options: { name: string; value: string }): Promise<number> {
     const { name, value } = options;
@@ -628,6 +615,12 @@ export class ContaboProvider {
       });
     }
 
+    // reinstall instance
+    const instanceId = await this.reinstallInstance({
+      instanceId: instance.instanceId,
+      sshKeys,
+    });
+
     // assign private networks if any and if not
     await Promise.allSettled(
       privateNetworks.map((privateNetworkId) =>
@@ -635,13 +628,8 @@ export class ContaboProvider {
       )
     );
 
-
-
-    // reinstall instance
-    const instanceId = await this.reinstallInstance({
-      instanceId: instance.instanceId,
-      sshKeys,
-    });
+    // restart instance
+    await this.restartInstance(instanceId);
 
     if (instance.displayName !== displayName) {
       await this.setInstanceDisplayName(instanceId, displayName);

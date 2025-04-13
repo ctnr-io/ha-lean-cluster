@@ -14,47 +14,39 @@ const contaboNodeProvisioner = new ContaboNodeProvisioner(contaboProvider);
 // Create a test domain name
 const testDomainName = `test-${new Date().getTime()}.example.com`;
 
-
 // Create a kubernetes administrator
 const k8sAdmin = createKubernetesAdministrator("1.32", contaboNodeProvisioner);
 
 // Test cluster ID will be set during the test
-let testClusterId: string;
+const testClusterId: string = "test";
 let controlPlaneNode: Node;
 
 async function cleanup() {
-  if (testClusterId) {
-    try {
-      console.info("Cleaning up test cluster:", testClusterId);
-      // Get nodes by tags
-      const nodes = await contaboNodeProvisioner.listNodes({ 
-        clusterId: testClusterId,
-      });
-      // Delete all nodes
-      for (const node of nodes) {
-        await contaboNodeProvisioner.deprovisionNode({
-          clusterId: testClusterId,
-          nodeId: node.id,
-        });
-      }
-    } catch (error) {
-      console.error("Error during cleanup:", error);
-    }
+  console.info("Cleaning up test cluster:", testClusterId);
+  // Get nodes by tags
+  const nodes = await contaboNodeProvisioner.listNodes({
+    clusterId: testClusterId,
+    withError: true,
+  });
+  // Delete all nodes
+  for (const node of nodes) {
+    await contaboNodeProvisioner.deprovisionNode({
+      clusterId: testClusterId,
+      nodeId: node.id,
+    });
   }
 }
 
 describe(
   "Kubernetes Administrator",
   {
-    // beforeAll: cleanup,
+    beforeAll: cleanup,
     afterAll: cleanup,
-    sanitizeOps: true,
-    sanitizeResources: true,
-    sanitizeExit: true,
   },
   () => {
     it("should create a Kubernetes cluster", async () => {
-      testClusterId = await k8sAdmin.createCluster({
+      await k8sAdmin.initCluster({
+        clusterId: testClusterId,
         domainName: testDomainName,
         cni: "calico",
         podCidr: "10.244.0.0/16",
@@ -83,7 +75,9 @@ describe(
       assertExists(kubeNodesOutput.includes(controlPlaneNode.publicIp));
     });
 
-    it("should add a worker node to the cluster", async () => {
+    it("should add a worker node to the cluster", {
+      
+    }, async () => {
       const workerNode = await k8sAdmin.addNode({
         clusterId: testClusterId,
         roles: ["worker"],
@@ -166,24 +160,24 @@ describe(
     it("should check etcd health", async () => {
       // Check etcd health
       const healthStatus = await k8sAdmin.checkEtcdHealth(testClusterId);
-      
+
       // Verify etcd is healthy
       assertEquals(healthStatus.healthy, true);
       assertExists(healthStatus.healthyEndpoints > 0);
       assertExists(healthStatus.members > 0);
       assertFalse(healthStatus.hasAlarms);
-      
+
       console.info("Etcd health status:", healthStatus);
     });
 
     it("should backup etcd", async () => {
       // Backup etcd
       const backupPath = await k8sAdmin.backupEtcd(testClusterId);
-      
+
       // Verify backup was created
       assertExists(backupPath);
       console.info("Etcd backup created at:", backupPath);
-      
+
       // Verify backup file exists on the node
       const backupExists = await executeSSH(
         controlPlaneNode.publicIp,

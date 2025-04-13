@@ -67,6 +67,8 @@ export interface EtcdHealthStatus {
 
 export interface CreateClusterOptions {
   domainName: string;
+  /** Custom cluster ID, used for testing purposes */
+  clusterId?: string;
   k8sVersion?: string;
   cni?: "calico" | "flannel";
   podCidr?: string;
@@ -92,7 +94,7 @@ export interface UpgradeClusterOptions {
 }
 
 export interface KubernetesAdministrator {
-  createCluster(options: CreateClusterOptions): Promise<string>;
+  initCluster(options: CreateClusterOptions): Promise<string>;
   deleteCluster(clusterId: string): Promise<void>;
   addNode(options: AddNodeOptions): Promise<Node>;
   removeNode(clusterId: string, nodeId: string): Promise<void>;
