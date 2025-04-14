@@ -1,8 +1,9 @@
-import { exec as execUtil, sh } from "../utils.ts";
+import { exec as execUtil, paginateFind, sh, waitFor } from "../utils.ts";
 import * as process from "node:process";
 import { existsSync, readFileSync } from "node:fs";
 import * as YAML from "@std/yaml";
 import * as ContaboOpenAPI from "@openapis/contabo";
+import { hash, randomBytes } from "node:crypto";
 
 export interface ContaboOauth {
   clientId: string;
@@ -37,6 +38,7 @@ export interface ContaboInstance {
   dataCenter: string;
   defaultUser: "root" | "admin" | "Administrator";
   diskMb: string;
+  errorMessage?: string;
   displayName: string;
   imageId: string;
   instanceId: number;
@@ -291,7 +293,9 @@ export class ContaboProvider {
     const instanceId = parseInt(
       await this.exec(
         sh`
-          cntb create instance --region EU --defaultUser root --imageId d64d5c6c-9dda-4e38-8174-0ee282474d8a ${sshKeys.length > 0 ? `--sshKeys ${sshKeys.join(",")}` : ""} --productId ${productId} --displayName "${displayName}" --output json
+          cntb create instance --region EU --defaultUser root --imageId d64d5c6c-9dda-4e38-8174-0ee282474d8a ${
+            sshKeys.length > 0 ? `--sshKeys ${sshKeys.join(",")}` : ""
+          } --productId ${productId} --displayName "${displayName}" --output json
         `
       )
     );
@@ -310,26 +314,31 @@ export class ContaboProvider {
     const { instanceId, sshKeys } = options;
     await this.exec(
       sh`
-        cntb reinstall instance "${instanceId}" --defaultUser root --imageId d64d5c6c-9dda-4e38-8174-0ee282474d8a ${sshKeys.length > 0 ? `--sshKeys ${sshKeys.join(",")}` : ""} --output json
+        cntb reinstall instance "${instanceId}" --defaultUser root --imageId d64d5c6c-9dda-4e38-8174-0ee282474d8a ${
+        sshKeys.length > 0 ? `--sshKeys ${sshKeys.join(",")}` : ""
+      } --output json
       `
     );
     // wait for the instance to be ready
-    for (let wait = true; wait; await new Promise((resolve) => setTimeout(resolve, 5000))) {
-      const instance = await this.getInstance(instanceId);
-      switch (instance.status) {
-        case "installing":
-          break;
-        case "stopped":
-          await this.startInstance(instanceId);
-          wait = false;
-          break;
-        case "running":
-          wait = false;
-          break;
-        default:
-          throw new Error(`Instance ${instanceId} failed to reinstall`);
-      }
-    }
+    await waitFor({
+      condition: async () => {
+        const instance = await this.getInstance(instanceId);
+        switch (instance.status) {
+          case "installing":
+            return false;
+          case "stopped":
+            await this.startInstance(instanceId);
+            return false;
+          case "running":
+            return true;
+          default:
+            throw new Error(`Instance ${instanceId} failed to reinstall`);
+        }
+      },
+      timeout: 60000,
+      interval: 5000,
+      errorMessage: "Instance restart: timed out",
+    });
     return instanceId;
   }
 
@@ -338,15 +347,69 @@ export class ContaboProvider {
   }
 
   async stopInstance(instanceId: number): Promise<void> {
-    await this.exec(`cntb stop instance "${instanceId}"`);
+    await waitFor({
+      condition: async () => {
+        try {
+          await this.exec(`cntb stop instance "${instanceId}"`);
+          return true;
+        } catch (error) {
+          if (error instanceof Error && error.message.includes("423")) {
+            return false;
+          }
+          throw error;
+        }
+      },
+      timeout: 20000,
+      interval: 5000,
+      errorMessage: "Instance stop: timed out",
+    });
   }
 
   async startInstance(instanceId: number): Promise<void> {
-    await this.exec(`cntb start instance "${instanceId}"`);
+    await waitFor({
+      condition: async () => {
+        try {
+          await this.exec(`cntb start instance "${instanceId}"`);
+          return true;
+        } catch (error) {
+          if (error instanceof Error && error.message.includes("423")) {
+            return false;
+          }
+          throw error;
+        }
+      },
+      timeout: 20000,
+      interval: 5000,
+      errorMessage: "Instance start: timed out",
+    });
   }
 
   async restartInstance(instanceId: number): Promise<void> {
-    await this.exec(`cntb restart instance "${instanceId}"`);
+    await waitFor({
+      condition: async () => {
+        try {
+          await this.exec(`cntb restart instance "${instanceId}"`);
+          return true
+        } catch (error) {
+          if (error instanceof Error && error.message.includes("423")) {
+            return false;
+          }
+          throw error;
+        }
+      },
+      timeout: 20000,
+      interval: 5000,
+      errorMessage: "Instance restart: timed out",
+    });
+    await waitFor({
+      condition: async () => {
+        const instance = await this.getInstance(instanceId);
+        return instance.status === "running";
+      },
+      timeout: 20000,
+      interval: 5000,
+      errorMessage: "Instance restart wait: timed out",
+    });
   }
 
   async shutdownInstance(instanceId: number): Promise<void> {
@@ -382,6 +445,26 @@ export class ContaboProvider {
 
   async assignPrivateNetwork(privateNetworkId: number, instanceId: number): Promise<void> {
     await this.exec(`cntb assign privateNetwork "${privateNetworkId}" "${instanceId}"`);
+    // wait for the instance to be assigned
+    await waitFor({
+      condition: async () => {
+        try {
+          const privateNetwork = await this.getPrivateNetwork(privateNetworkId);
+          return privateNetwork.instances.some((instance) => instance.instanceId === instanceId);
+        } catch (error) {
+          // Wait when instance is locked
+          if (error instanceof Error && error.message.includes("423")) {
+            return false;
+          }
+          throw error;
+        }
+      },
+      timeout: 20000,
+      interval: 5000,
+      errorMessage: "Instance assign private network: timed out",
+    });
+    // always restart the instance after assigning a private network
+    await this.restartInstance(instanceId);
   }
 
   async unassignPrivateNetwork(privateNetworkid: number, instanceId: number): Promise<void> {
@@ -398,57 +481,66 @@ export class ContaboProvider {
     await this.exec(`cntb delete privateNetwork "${privateNetworkId}"`);
   }
 
-  async createTag(options: { name: string; color?: string }): Promise<number> {
-    return parseInt(
-      await this.exec(`cntb create tag --name "${options.name}" ${options.color ? `--color "${options.color}"` : ""}`)
-    );
-  }
+  // async createTag(options: { name: string; color?: string }): Promise<number> {
+  //   return parseInt(
+  //     await this.exec(`cntb create tag --name "${options.name}" ${options.color ? `--color "${options.color}"` : ""}`)
+  //   );
+  // }
 
-  async deleteTag(tagId: number): Promise<void> {
-    await this.exec(`cntb delete tag "${tagId}"`);
-  }
+  // async deleteTag(tagId: number): Promise<void> {
+  //   await this.exec(`cntb delete tag "${tagId}"`);
+  // }
 
-  listTags(options: ContaboListOptions<{ tagName?: string }>): Promise<ContaboTag[]> {
-    return this.execList(
-      ["cntb get tags --output json", options.tagName && `--tagName "${options.tagName}"`].filter(Boolean).join(" "),
-      options
-    );
-  }
+  // listTags(options: ContaboListOptions<{ tagName?: string }>): Promise<ContaboTag[]> {
+  //   return this.execList(
+  //     ["cntb get tags --output json", options.tagName && `--tagName "${options.tagName}"`].filter(Boolean).join(" "),
+  //     options
+  //   );
+  // }
 
-  async getTag(tagId: number): Promise<ContaboTag> {
-    return JSON.parse(await this.exec(`cntb get tag --output json "${tagId}"`))[0] as ContaboTag;
-  }
+  // async getTag(tagId: number): Promise<ContaboTag> {
+  //   return JSON.parse(await this.exec(`cntb get tag --output json "${tagId}"`))[0] as ContaboTag;
+  // // }
 
-  async createTagAssignment(options: {
-    tagId: number;
-    resourceType: ContaboTagAssignmentResourceType;
-    resourceId: number;
-  }): Promise<void> {
-    const { tagId, resourceType, resourceId } = options;
-    await this.exec(`cntb create tagAssignment "${tagId}" "${resourceType}" "${resourceId}"`);
-  }
+  // async createTagAssignment(options: {
+  //   tagId: number;
+  //   resourceType: ContaboTagAssignmentResourceType;
+  //   resourceId: string;
+  // }): Promise<void> {
+  //   const { tagId, resourceType, resourceId } = options;
+  //   await this.exec(`cntb create tagAssignment "${tagId}" "${resourceType}" "${resourceId}"`);
+  // }
 
-  async deleteTagAssignment(options: {
-    tagId: number;
-    resourceType: ContaboTagAssignmentResourceType;
-    resourceId: string;
-  }): Promise<void> {
-    const { tagId, resourceType, resourceId } = options;
-    await this.exec(`cntb delete tagAssignment "${tagId}" "${resourceType}" "${resourceId}"`);
-  }
+  // async deleteTagAssignment(options: {
+  //   tagId: number;
+  //   resourceType: ContaboTagAssignmentResourceType;
+  //   resourceId: string;
+  // }): Promise<void> {
+  //   const { tagId, resourceType, resourceId } = options;
+  //   await this.exec(`cntb delete tagAssignment "${tagId}" "${resourceType}" "${resourceId}"`);
+  // }
 
-  listTagAssignments(
-    options: ContaboListOptions<{
-      tagId?: number;
-    }>
-  ): Promise<ContaboTagAssignment[]> {
-    return this.execList(
-      ["cntb get tagAssignments --output json", options.tagId && `--tagId "${options.tagId}"`]
-        .filter(Boolean)
-        .join(" "),
-      options
-    );
-  }
+  // listTagAssignments(
+  //   options: ContaboListOptions<{
+  //     tagId?: number;
+  //   }>
+  // ): Promise<ContaboTagAssignment[]> {
+  //   return this.execList(["cntb get tagAssignments --output json", options.tagId].filter(Boolean).join(" "), options);
+  // }
+
+  // async getTagAssignment(
+  //   options: ContaboListOptions<{
+  //     tagId: number;
+  //     resourceId: string;
+  //     resourceType: "instance" | "image" | "object-storage";
+  //   }>
+  // ): Promise<ContaboTagAssignment> {
+  //   return JSON.parse(
+  //     await this.exec(
+  //       `cntb get tagAssignment --output json "${options.tagId}" "${options.resourceId}" "${options.resourceType}"`
+  //     )
+  //   )[0] as ContaboTagAssignment;
+  // }
 
   // helpers
   public async resetInstance(instanceId: number): Promise<void> {
@@ -457,80 +549,49 @@ export class ContaboProvider {
   }
 
   private async resetInstanceWithDisplayName(displayName: string): Promise<void> {
-    for (let page = 1; page < Infinity; page++) {
-      const instances = await this.listInstances({ page });
-      const instance = instances.find((instance) => instance.displayName === displayName);
-      if (instance) {
-        await this.resetInstance(instance.instanceId);
-        return;
-      }
-    }
+    const instance = await paginateFind({
+      request: this.listInstances,
+      condition: (instance) => instance.displayName === displayName,
+    });
+    await this.resetInstance(instance.instanceId);
   }
 
-  private async getAvailableInstance(options: {
-    displayName: string;
-    productId?: ContaboProductId;
-    preferedDataCenter?: string;
-  }): Promise<ContaboInstance | null> {
-    for (let page = 1; page < Infinity; page++) {
-      const instances = await this.listInstances({ page });
-      if (instances.length === 0) {
-        return null;
-      }
-      // find the first available instance, prefer with same datacenter
-      let availableInstances = instances;
-      if (options.preferedDataCenter) {
-        availableInstances = availableInstances.sort(
-          (a) => options.preferedDataCenter?.localeCompare(a.dataCenter ?? "") ?? 1
-        );
-      }
-      const availableInstance = availableInstances.find(
-        (instance) =>
-          instance.displayName === "" &&
-          (options.productId === undefined || instance.productId === options.productId) &&
-          (instance.status === "stopped" || instance.status === "running")
-      );
-      if (!availableInstance) {
-        return null;
-      }
-
-      // apply display name
-      try {
-        await this.setInstanceDisplayName(availableInstance.instanceId, options.displayName);
-      } catch {
-        // if the display name is already taken, reset the instance that use it and try again
-        await this.resetInstanceWithDisplayName(options.displayName);
-        await this.setInstanceDisplayName(availableInstance.instanceId, options.displayName);
-      }
-
-      return availableInstance;
-    }
-    return null;
-  }
+  // async getTagByName(name: string): Promise<ContaboTag> {
+  //   return await paginateFind({
+  //     request: (options) => this.listTags({ ...options, tagName: name }),
+  //     condition: (tag) => tag.name === name,
+  //   });
+  // }
 
   // async ensureTag(options: { name: string; color?: string }): Promise<number> {
   //   const { name, color } = options;
-  //   const tags = await this.listTags({ tagName: name });
-  //   if (tags.length === 0) {
+  //   try {
+  //     const tag = await this.getTagByName(name);
+  //     // TODO: update tag color if color is provided
+  //     return tag.tagId;
+  //   } catch {
   //     return await this.createTag({ name, color });
   //   }
-  //   return tags[0].tagId;
   // }
 
   // async assignTag(options: {
   //   name: string;
   //   color?: string;
   //   resourceType: ContaboTagAssignmentResourceType;
-  //   resourceId: number;
+  //   resourceId: string;
   // }): Promise<number> {
   //   const { name, color, resourceType, resourceId } = options;
   //   const tagId = await this.ensureTag({ name, color });
   //   const tagAssignments = await this.listTagAssignments({
   //     tagId,
   //   });
-  //   if (tagAssignments.length === 0) {
-  //     await this.createTagAssignment({ tagId, resourceType, resourceId });
+  //   const tagAssignment = tagAssignments.find(
+  //     (tagAssignment) => tagAssignment.resourceId === resourceId && tagAssignment.resourceType === resourceType
+  //   );
+  //   if (tagAssignment) {
+  //     throw new Error(`Tag ${name} already assigned to resource ${resourceId} of type ${resourceType}`);
   //   }
+  //   await this.createTagAssignment({ tagId, resourceType, resourceId });
   //   return tagId;
   // }
 
@@ -540,23 +601,38 @@ export class ContaboProvider {
   //   resourceId: string;
   // }): Promise<void> {
   //   const { name, resourceType, resourceId } = options;
-  //   const tagId = await this.ensureTag({ name });
+  //   const tag = await this.getTagByName(name);
   //   const tagAssignments = await this.listTagAssignments({
-  //     tagId,
-  //   })
-  //   if (tagAssignments.length > 0) {
-  //     await this.deleteTagAssignment({ tagId, resourceType, resourceId });
+  //     tagId: tag.tagId,
+  //   });
+  //   if (tagAssignments.length === 0) {
+  //     throw new Error(`Tag ${name} not assigned to resource ${resourceId} of type ${resourceType}`);
+  //   }
+  //   await this.deleteTagAssignment({ tagId: tag.tagId, resourceType, resourceId });
+  //   if (tagAssignments.length === 1) {
+  //     await this.deleteTag(tag.tagId);
   //   }
   // }
 
-  // async listAssignedTags(options: ContaboListOptions<{ tag: string }>): Promise<ContaboTagAssignment[]> {
-  //   const { tag } = options;
-  //   const [{ tagId }] = (await this.listTags({ tagName: tag })) ?? [{}];
+  // async isTagAssignedToResource(options: {
+  //   name: string;
+  //   resourceType: ContaboTagAssignmentResourceType;
+  //   resourceId: string;
+  // }): Promise<boolean> {
+  //   const { name } = options;
+  //   const [{ tagId }] = (await this.listTags({ tagName: name })) ?? [{}];
   //   if (tagId === undefined) {
-  //     return [];
+  //     return false;
   //   }
-  //   const tagAssignments = await this.listTagAssignments({ tagId, ...options });
-  //   return tagAssignments;
+  //   try {
+  //     await paginateFind({
+  //       request: (options) => this.listTagAssignments({ tagId, ...options }),
+  //       condition: (tagAssignment) => tagAssignment.resourceId === options.resourceId,
+  //     });
+  //     return true;
+  //   } catch {
+  //     return false;
+  //   }
   // }
 
   async ensureSshKey(options: { name: string; value: string }): Promise<number> {
@@ -575,66 +651,107 @@ export class ContaboProvider {
     }
     return privateNetworks[0].privateNetworkId;
   }
-
   async ensureInstance(options: {
     provisioning: "auto" | "manual";
-    displayName: string;
+    displayName: (instanceId: number) => string;
     sshKeys: number[];
     productId: ContaboProductId;
     privateNetworks: number[];
     preferedDataCenter?: string;
-  }): Promise<number> {
-    const { provisioning, productId, displayName, sshKeys, privateNetworks } = options;
-    let instance: ContaboInstance | undefined | null = undefined;
-    instance = await this.getAvailableInstance(options);
-
-    // if there is no instance available, create one if provisioning is automatic
-    if (!instance) {
-      if (provisioning !== "auto") {
-        throw new Error(
-          `Automatic provisioning disabled, no available instances found, please provision instances with productId ${productId} in Contabo first`
-        );
-      } else {
-        // create instance
-        const instanceId = await this.createInstance({ productId, sshKeys, displayName });
-        instance = await this.getInstance(instanceId);
+  }): Promise<ContaboInstance> {
+    let instance: ContaboInstance;
+    // Find or create available instance
+    {
+      try {
+        instance = await paginateFind({
+          request: (options) => this.listInstances(options),
+          condition: async (instance) => {
+            // Find instance with matching display name or empty display name
+            if (instance.displayName !== "") {
+              return false;
+            }
+            // Find instance with matching product id and empty display name
+            if (options.productId !== instance.productId) {
+              return false;
+            }
+            // Find instance not cancelled
+            if (instance.cancelDate !== "") {
+              await this.setInstanceDisplayName(instance.instanceId, `${instance.instanceId} status=cancelled`);
+              return false;
+            }
+            // Find instance with no errors
+            if (instance.errorMessage) {
+              await this.setInstanceDisplayName(
+                instance.instanceId,
+                `${instance.instanceId} error=${instance.errorMessage}`.substring(0, 64)
+              );
+              return false;
+            }
+            // Find instance stopped or running
+            if (instance.status !== "stopped" && instance.status !== "running") {
+              return false;
+            }
+            return true;
+          },
+          // Sort instances by prefered data center
+          sorter: (a) => options.preferedDataCenter?.localeCompare(a.dataCenter ?? "") ?? 1,
+        });
+      } catch {
+        // if there is no instance available, create one if provisioning is automatic
+        if (options.provisioning !== "auto") {
+          throw new Error(
+            `Automatic provisioning disabled, no available instances found, please provision instances with productId ${options.productId} in Contabo first`
+          );
+        } else {
+          // create instance
+          const instanceId = await this.createInstance({
+            productId: options.productId,
+            sshKeys: options.sshKeys,
+            displayName: "provisioning...",
+          });
+          instance = await this.getInstance(instanceId);
+        }
       }
+      await this.setInstanceDisplayName(instance.instanceId, options.displayName(instance.instanceId));
+ 
     }
 
+    // Setup instance
     // if instance doesn't have privateNetwork addon, add it
-    if (!instance.addOns.some((addOn) => addOn.id === 1477)) {
-      if (provisioning !== "auto") {
-        await this.resetInstance(instance.instanceId);
-        throw new Error(
-          `Automatic provisioning disabled, no private network addon found on instance ${instance.displayName}, please add private network addon to instance in Contabo first`
-        );
-      }
-      await this.upgradeInstance({
-        instanceId: instance.instanceId,
-        privateNetwork: true,
-      });
-    }
+    // if (!instance.addOns.some((addOn) => addOn.id === 1477)) {
+    //   if (options.provisioning !== "auto") {
+    //     await this.resetInstance(instance.instanceId);
+    //     throw new Error(
+    //       `Automatic provisioning disabled, no private network addon found on instance ${instance.displayName}, please add private network addon to instance in Contabo first`
+    //     );
+    //   }
+    //   await this.upgradeInstance({
+    //     instanceId: instance.instanceId,
+    //     privateNetwork: true,
+    //   });
+    // }
 
     // reinstall instance
-    const instanceId = await this.reinstallInstance({
+    await this.reinstallInstance({
       instanceId: instance.instanceId,
-      sshKeys,
+      sshKeys: options.sshKeys,
     });
 
-    // assign private networks if any and if not
-    await Promise.allSettled(
-      privateNetworks.map((privateNetworkId) =>
-        this.assignPrivateNetwork(privateNetworkId, instance.instanceId).catch(() => {})
-      )
-    );
+    instance = await this.getInstance(instance.instanceId);
 
-    // restart instance
-    await this.restartInstance(instanceId);
-
-    if (instance.displayName !== displayName) {
-      await this.setInstanceDisplayName(instanceId, displayName);
+    // Start instance if not running
+    if (instance.status !== "running") {
+      await this.startInstance(instance.instanceId);
+      instance = await this.getInstance(instance.instanceId);
     }
 
-    return instanceId;
+    // assign private networks if any and if not
+    // await Promise.allSettled(
+    //   options.privateNetworks.map((privateNetworkId) =>
+    //     this.assignPrivateNetwork(privateNetworkId, instance.instanceId).catch(() => {})
+    //   )
+    // );
+
+    return instance;
   }
 }

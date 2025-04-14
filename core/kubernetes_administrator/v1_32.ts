@@ -1,4 +1,4 @@
-import { Node } from "../node-provisioners/mod.ts";
+import { Node } from "../node_provisioners/mod.ts";
 import { executeSSH, sh } from "../utils.ts";
 import { AbstractKubernetesAdministrator } from "./abstract.ts";
 import { KubernetesAdministrator, UpgradeClusterOptions } from "./mod.ts";
@@ -92,16 +92,10 @@ export class KubernetesAdministratorV1_32 extends AbstractKubernetesAdministrato
   async upgradeCluster(clusterId: string, options: UpgradeClusterOptions): Promise<KubernetesAdministrator> {
     const { etcdNodes } = options;
     
-    // Get all nodes
-    const nodes = await this.nodeProvisioner.listNodes({
-      clusterId,
-    });
-
-    // Find all control plane nodes
-    const controlPlaneNodes = nodes.filter((node) => node.roles.includes("control-plane"));
-    if (controlPlaneNodes.length === 0) {
-      throw new Error("No control plane nodes found in the cluster");
-    }
+    // Get control plane nodes
+    const controlPlaneNodes = await Array.fromAsync(
+      this.listNodes({ clusterId, type: "control-plane" })
+    );
 
     // Before upgrading, backup etcd
     const backupPath = await this.backupEtcd(clusterId);

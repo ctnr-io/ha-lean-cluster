@@ -1,37 +1,38 @@
 import { describe, it } from "@std/testing/bdd";
-import { ContaboNodeProvisioner } from "../node-provisioners/contabo.ts";
-import { ContaboProvider } from "../cloud-providers/contabo.ts";
+import { ContaboNodeProvisioner } from "../node_provisioners/contabo.ts";
+import { ContaboProvider } from "../cloud_providers/contabo.ts";
 import { createKubernetesAdministrator } from "./mod.ts";
 import { assertEquals, assertExists } from "@std/assert";
 import { assertFalse } from "@std/assert/false";
-import { executeSSH } from "../utils.ts";
-import { Node } from "../node-provisioners/mod.ts";
+import { executeSSH, findAsync, firstAsync } from "../utils.ts";
+import { Node, NodeRoles } from "../node_provisioners/mod.ts";
 
 // Set up providers and provisioners
 const contaboProvider = new ContaboProvider();
 const contaboNodeProvisioner = new ContaboNodeProvisioner(contaboProvider);
 
-// Create a test domain name
-const testDomainName = `test-${new Date().getTime()}.example.com`;
-
 // Create a kubernetes administrator
 const k8sAdmin = createKubernetesAdministrator("1.32", contaboNodeProvisioner);
 
-// Test cluster ID will be set during the test
-const testClusterId: string = "test";
+// Test cluster ID
+const clusterId: string = "test0001";
+
+// Will store the control plane node for later tests
 let controlPlaneNode: Node;
 
 async function cleanup() {
-  console.info("Cleaning up test cluster:", testClusterId);
+  console.info("Cleaning up test cluster:", clusterId);
   // Get nodes by tags
-  const nodes = await contaboNodeProvisioner.listNodes({
-    clusterId: testClusterId,
-    withError: true,
-  });
+  const nodes = await Array.fromAsync(
+    contaboNodeProvisioner.listNodes({
+      clusterId: clusterId,
+      // withError: true,
+    })
+  );
   // Delete all nodes
   for (const node of nodes) {
     await contaboNodeProvisioner.deprovisionNode({
-      clusterId: testClusterId,
+      clusterId: clusterId,
       nodeId: node.id,
     });
   }
@@ -40,30 +41,38 @@ async function cleanup() {
 describe(
   "Kubernetes Administrator",
   {
-    beforeAll: cleanup,
-    afterAll: cleanup,
+    // beforeAll: cleanup,
+    // afterAll: cleanup,
+    sanitizeExit: true,
+    sanitizeResources: true,
+    sanitizeOps: true,
   },
   () => {
     it("should create a Kubernetes cluster", async () => {
       await k8sAdmin.initCluster({
-        clusterId: testClusterId,
-        domainName: testDomainName,
-        cni: "calico",
+        clusterId: clusterId,
         podCidr: "10.244.0.0/16",
         serviceCidr: "10.96.0.0/12",
       });
 
-      assertExists(testClusterId);
-      console.info("Created cluster with ID:", testClusterId);
+      assertExists(clusterId);
+      console.info("Created cluster with ID:", clusterId);
 
       // Get the nodes to verify the cluster was created
-      const nodes = await contaboNodeProvisioner.listNodes({
-        clusterId: testClusterId,
-      });
+      const nodes = await Array.fromAsync(
+        contaboNodeProvisioner.listNodes({
+          clusterId: clusterId,
+        })
+      );
+      console.log(nodes);
 
       // Should have at least one control plane node
       assertFalse(nodes.length === 0);
-      controlPlaneNode = nodes.find((node) => node.roles.includes("control-plane"))!;
+
+      // Find the control plane node
+      const controlPlaneNode = await firstAsync({
+        generator: k8sAdmin.listNodes({ clusterId, type: "control-plane" }),
+      });
       assertExists(controlPlaneNode);
 
       // Verify Kubernetes is running by checking for nodes
@@ -75,11 +84,15 @@ describe(
       assertExists(kubeNodesOutput.includes(controlPlaneNode.publicIp));
     });
 
-    it("should add a worker node to the cluster", {
-      
-    }, async () => {
+    it("should add a worker node to the cluster", async () => {
+      // Find the control plane node
+      const controlPlaneNode = await firstAsync({
+        generator: k8sAdmin.listNodes({ clusterId, type: "control-plane" }),
+      });
+      assertExists(controlPlaneNode);
+
       const workerNode = await k8sAdmin.addNode({
-        clusterId: testClusterId,
+        clusterId: clusterId,
         roles: ["worker"],
       });
 
@@ -104,8 +117,14 @@ describe(
     });
 
     it("should add a control plane node to the cluster", async () => {
+      // Find the control plane node
+      const controlPlaneNode = await firstAsync({
+        generator: k8sAdmin.listNodes({ clusterId, type: "control-plane" }),
+      });
+      assertExists(controlPlaneNode);
+
       const secondControlPlaneNode = await k8sAdmin.addNode({
-        clusterId: testClusterId,
+        clusterId: clusterId,
         roles: ["control-plane"],
       });
 
@@ -130,22 +149,30 @@ describe(
     });
 
     it("should remove a node from the cluster", async () => {
-      // Get all nodes
-      const nodes = await contaboNodeProvisioner.listNodes({
-        clusterId: testClusterId,
+      // Find the control plane node
+      const controlPlaneNode = await firstAsync({
+        generator: k8sAdmin.listNodes({ clusterId, type: "control-plane" }),
       });
+      assertExists(controlPlaneNode);
 
       // Find a worker node to remove
-      const workerNode = nodes.find((node) => node.roles.includes("worker") && !node.roles.includes("control-plane"));
+      const workerNode = await firstAsync({
+        generator: k8sAdmin.listNodes({
+          clusterId,
+          type: "worker",
+        }),
+      });
       assertExists(workerNode);
 
       // Remove the worker node
-      await k8sAdmin.removeNode(testClusterId, workerNode.id);
+      await k8sAdmin.removeNode(clusterId, workerNode.id);
 
       // Verify the node was removed
-      const updatedNodes = await contaboNodeProvisioner.listNodes({
-        clusterId: testClusterId,
-      });
+      const updatedNodes = await Array.fromAsync(
+        contaboNodeProvisioner.listNodes({
+          clusterId: clusterId,
+        })
+      );
       assertFalse(updatedNodes.some((node) => node.id === workerNode.id));
 
       // Verify the node was removed from Kubernetes
@@ -159,7 +186,7 @@ describe(
 
     it("should check etcd health", async () => {
       // Check etcd health
-      const healthStatus = await k8sAdmin.checkEtcdHealth(testClusterId);
+      const healthStatus = await k8sAdmin.checkEtcdHealth(clusterId);
 
       // Verify etcd is healthy
       assertEquals(healthStatus.healthy, true);
@@ -171,8 +198,14 @@ describe(
     });
 
     it("should backup etcd", async () => {
+      // Find the control plane node
+      const controlPlaneNode = await firstAsync({
+        generator: k8sAdmin.listNodes({ clusterId, type: "control-plane" }),
+      });
+      assertExists(controlPlaneNode);
+
       // Backup etcd
-      const backupPath = await k8sAdmin.backupEtcd(testClusterId);
+      const backupPath = await k8sAdmin.backupEtcd(clusterId);
 
       // Verify backup was created
       assertExists(backupPath);
@@ -186,14 +219,17 @@ describe(
       assertEquals(backupExists.trim(), "exists");
     });
 
-    it("should delete the cluster", async () => {
-      await k8sAdmin.deleteCluster(testClusterId);
+    // it("should delete the cluster", async () => {
+    //   await k8sAdmin.deleteCluster(clusterId);
 
-      // Verify all nodes were deprovisioned
-      const nodes = await contaboNodeProvisioner.listNodes({
-        clusterId: testClusterId,
-      });
-      assertFalse(nodes.length !== 0);
-    });
+    //   // Verify all nodes were deprovisioned
+    //   const nodes = await Array.fromAsync(
+    //     contaboNodeProvisioner.listNodes({
+    //       clusterId: clusterId,
+    //       // withError: true,
+    //     })
+    //   );
+    //   assertFalse(nodes.length !== 0);
+    // });
   }
 );

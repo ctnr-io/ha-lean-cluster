@@ -1,7 +1,7 @@
-import { hash, randomBytes } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { executeSSH, exec } from "../utils.ts";
 import {
-DeprovisionNodeOptions,
+  DeprovisionNodeOptions,
   GetNodeOptions,
   ListNodesOptions,
   Node,
@@ -25,7 +25,7 @@ export class NodeProvisioningReportError extends Error {
 }
 export abstract class AbstractNodeProvisioner implements NodeProvisioner {
   protected static generateNodeId(): string {
-    return hash("sha256", randomBytes(32), "hex").substring(0, 8);
+    return randomUUID();
   }
 
   protected static retrieveDataFromNodeNetworkId(id: string): {
@@ -64,7 +64,7 @@ export abstract class AbstractNodeProvisioner implements NodeProvisioner {
         }),
       // Check that we can connect through SSH
       () =>
-        executeSSH(node.publicIp, "echo 'Hello World!'").catch((cause) => {
+        executeSSH(node.publicIp, "echo 'Hello World!'", undefined, { timeout: 10000, retries: 6 }).catch((cause) => {
           throw new NodeProvisioningReportError({
             type: "ssh_node",
             node,
@@ -72,36 +72,19 @@ export abstract class AbstractNodeProvisioner implements NodeProvisioner {
             cause,
           });
         }),
-      // Check that the node is reachable by other node through its private network
-      ...peerNodes
-        .filter((n) => n.networkCIDR === node.networkCIDR)
-        .map((peerNode) => async () => {
-          const command = createPingCommand(peerNode.privateIp);
-          await executeSSH(node.publicIp, command).catch((cause) => {
-            throw new NodeProvisioningReportError({
-              type: "ssh_ping_peer_private",
-              node,
-              peerNode,
-              command,
-              cause,
-            });
+      // Check that the node is reachable by other nodes through public network
+      ...peerNodes.map((peerNode) => async () => {
+        const command = createPingCommand(peerNode.publicIp);
+        await executeSSH(node.publicIp, command, undefined, { timeout: 10000, retries: 6 }).catch((cause) => {
+          throw new NodeProvisioningReportError({
+            type: "ssh_ping_peer_public",
+            node,
+            peerNode,
+            command,
+            cause,
           });
-        }),
-      // Check that the node is reachable by other node through public network
-      ...peerNodes
-        .filter((n) => n.networkCIDR !== node.networkCIDR)
-        .map((peerNode) => async () => {
-          const command = createPingCommand(peerNode.publicIp);
-          await executeSSH(node.publicIp, command).catch((cause) => {
-            throw new NodeProvisioningReportError({
-              type: "ssh_ping_peer_public",
-              node,
-              peerNode,
-              command,
-              cause,
-            });
-          });
-        }),
+        });
+      }),
     ];
     // Throw an error if any of the checks fail
     for (const check of checks) {
@@ -111,6 +94,6 @@ export abstract class AbstractNodeProvisioner implements NodeProvisioner {
 
   abstract provisionNode(options: ProvisionNodeOptions): Promise<Node>;
   abstract deprovisionNode(options: DeprovisionNodeOptions): Promise<void>;
-  abstract listNodes(options: ListNodesOptions): Promise<Node[]>;
+  abstract listNodes(options: ListNodesOptions): AsyncGenerator<Node>;
   abstract getNode(options: GetNodeOptions): Promise<Node>;
 }

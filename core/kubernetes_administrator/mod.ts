@@ -1,4 +1,4 @@
-import { Node, NodeProvisioner, NodeRoles } from "../node-provisioners/mod.ts";
+import { Node, NodeProvisioner, NodeRoles } from "../node_provisioners/mod.ts";
 import { executeSSH, sh } from "../utils.ts";
 import { hash, randomUUID } from "node:crypto";
 import { KubernetesAdministratorV1_32 } from "./v1_32.ts";
@@ -65,12 +65,12 @@ export interface EtcdHealthStatus {
   alarmsOutput: string;
 }
 
-export interface CreateClusterOptions {
-  domainName: string;
+export interface InitClusterOptions {
+  // domainName: string;
   /** Custom cluster ID, used for testing purposes */
   clusterId?: string;
   k8sVersion?: string;
-  cni?: "calico" | "flannel";
+  // cni?: "calico" | "flannel";
   podCidr?: string;
   serviceCidr?: string;
   /** Options for etcd configuration */
@@ -93,11 +93,17 @@ export interface UpgradeClusterOptions {
   clusterId: string;
 }
 
+export interface ListNodesOptions {
+  clusterId: string;
+  type?: "control-plane" | "worker" | "etcd";
+}
+
 export interface KubernetesAdministrator {
-  initCluster(options: CreateClusterOptions): Promise<string>;
+  initCluster(options: InitClusterOptions): Promise<string>;
   deleteCluster(clusterId: string): Promise<void>;
   addNode(options: AddNodeOptions): Promise<Node>;
   removeNode(clusterId: string, nodeId: string): Promise<void>;
+  listNodes(options: ListNodesOptions): AsyncGenerator<Node>;
   
   /**
    * Upgrade the Kubernetes cluster to a the next available version

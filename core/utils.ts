@@ -2,6 +2,7 @@ import * as util from "node:util";
 import * as childProcess from "node:child_process";
 import * as fs from "node:fs/promises";
 import { spawn } from "node:child_process";
+import { time } from "node:console";
 
 export const NodeRoles = ["control-plane", "etcd", "worker"] as const;
 export type NodeRoles = (typeof NodeRoles)[number][];
@@ -98,34 +99,219 @@ export async function exec(command: string, input?: string): Promise<string> {
 /**
  * Execute an SSH command on a remote host
  */
-export async function executeSSH(host: string, command: string, input?: string): Promise<string> {
-  const sshArgs = ["-i", "private.key", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", `root@${host}`];
+export async function executeSSH(
+  host: string,
+  command: string,
+  input?: string,
+  options?: {
+    retries?: number;
+    timeout?: number;
+  }
+): Promise<string> {
+  const sshArgs = [
+    "-i",
+    "private.key",
+    "-o",
+    "StrictHostKeyChecking=no",
+    "-o",
+    "UserKnownHostsFile=/dev/null",
+    ...(options?.timeout ? ["-o", `ConnectTimeout=${options.timeout / 1000}`] : []),
+    `root@${host}`,
+  ];
   console.log(`Executing: ssh ${sshArgs.join(" ")}\n${command} ${input ? `<<< ${input}` : ""}`);
 
   try {
-    // Use execFile instead of spawn directly to handle the command parsing
-    const output = await new Promise<string>((resolve, reject) => {
-      // Use shell: true to execute the command in a shell
-      const child = childProcess.execFile("ssh", [...sshArgs, command], { shell: false }, (error, stdout, stderr) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve(stdout + stderr);
-      });
+    return await retry({
+      fn: () =>
+        new Promise<string>((resolve, reject) => {
+          // Use shell: true to execute the command in a shell
+          const child = childProcess.execFile(
+            "ssh",
+            [...sshArgs, command],
+            { shell: false },
+            (error, stdout, stderr) => {
+              if (error) {
+                reject(error);
+                return;
+              }
+              console.log(stdout)
+              resolve(stdout + stderr);
+            }
+          );
 
-      if (input && child.stdin) {
-        child.stdin.write(input);
-        child.stdin.end();
-      }
+          if (input && child.stdin) {
+            child.stdin.write(input);
+            child.stdin.end();
+          }
+        }),
+      maxRetries: options?.retries ?? 0,
+      timeout: options?.timeout ? options?.timeout * ((options?.retries ?? 0) + 1) : Infinity,
+      interval: options?.timeout,
     });
-
-    return output;
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Command failed: ${errorMessage}`);
     throw new Error(`Failed to execute command: ${errorMessage}`);
   }
+}
+
+/**
+ * Paginate through a list of items via function `fn` and return the first item that satisfies the condition `condition`.
+ */
+export async function paginateFind<T>(options: {
+  request: (options: { page: number; size: number }) => Promise<T[]>;
+  condition: (item: T) => Promise<boolean> | boolean;
+  sorter?: (a: T, b: T) => number;
+  pageSize?: number;
+  maxPages?: number;
+  error?: Error;
+}): Promise<T> {
+  for await (const item of paginateFilter(options)) {
+    return item;
+  }
+  throw options.error ?? new Error("PaginateFind: Item not found");
+}
+
+/**
+ * Paginate through a list of items via function `fn` and return the all items that satisfies the condition `condition`.
+ */
+export async function* paginateFilter<T>(options: {
+  request: (options: { page: number; size: number }) => Promise<T[]>;
+  condition: (item: T) => Promise<boolean> | boolean;
+  sorter?: (a: T, b: T) => number;
+  pageSize?: number;
+  maxPages?: number;
+}): AsyncGenerator<T> {
+  const { maxPages = Infinity, pageSize = 100, request, condition, sorter } = options;
+  for (let page = 1; page <= maxPages; page++) {
+    let itemsPage = await request({ page, size: pageSize });
+    if (sorter) {
+      itemsPage = itemsPage.sort(sorter);
+    }
+    for (const item of itemsPage) {
+      try {
+        if (await condition(item)) {
+          yield item;
+        }
+      } catch {
+        // ignore errors
+      }
+    }
+    if (itemsPage.length < pageSize) {
+      break;
+    }
+  }
+}
+
+/**
+ * Wait for a condition to be true
+ */
+export async function waitFor(options: {
+  condition: () => Promise<boolean>;
+  timeout?: number;
+  interval?: number;
+  errorMessage?: string;
+}): Promise<void> {
+  const { condition, timeout = 10000, interval = 1000, errorMessage = "Wait for condition: timed out" } = options;
+  const start = performance.now();
+  while (true) {
+    const result = await condition();
+    if (result) {
+      return;
+    }
+    if (performance.now() - start > timeout) {
+      throw new Error(errorMessage);
+    }
+    await new Promise((resolve) => setTimeout(resolve, interval));
+  }
+}
+  
+/**
+ * Retry a function until it succeed nth times or timeout
+ */
+export async function retry<T>(options: {
+  fn: () => Promise<T>;
+  maxRetries?: number;
+  interval?: number;
+  timeout?: number;
+}): Promise<T> {
+  const { fn, maxRetries = 3, interval = 1000, timeout = 10000 } = options;
+  let retries = 0;
+  const start = performance.now();
+  while (true) {
+    console.log('Trying...', { retries, maxRetries });
+    try {
+      return await fn();
+    } catch (error) {
+      if (retries >= maxRetries || performance.now() - start > timeout) {
+        throw error;
+      }
+      retries++;
+      console.log(`Retrying... (${retries}/${maxRetries})`);
+      await new Promise((resolve) => setTimeout(resolve, interval));
+    }
+  }
+}
+
+/**
+ * Find the first item that satisfies the condition in an async generator
+ */
+export async function findAsync<T>(options: {
+  generator: AsyncGenerator<T>;
+  condition: (item: T) => Promise<boolean> | boolean;
+  notFoundError?: Error;
+}): Promise<T> {
+  for await (const item of filterAsync(options)) {
+    return item;
+  }
+  throw options.notFoundError ?? new Error("Item not found");
+}
+
+/**
+ * Filter an async generator by condition
+ */
+export async function* filterAsync<T>(options: {
+  generator: AsyncGenerator<T>;
+  condition: (item: T) => Promise<boolean> | boolean;
+}): AsyncGenerator<T> {
+  for await (const item of options.generator) {
+    try {
+      if (await options.condition(item)) {
+        yield item;
+      }
+    } catch {
+      // ignore errors
+    }
+  }
+}
+
+/**
+ * Get the nth item in an async generator
+ */
+export async function nthAsync<T>(options: {
+  generator: AsyncGenerator<T>;
+  n: number;
+  notFoundError?: Error;
+}): Promise<T> {
+  let i = 0;
+  for await (const item of options.generator) {
+    if (i === options.n) {
+      return item;
+    }
+    i++;
+  }
+  throw options.notFoundError ?? new Error(`Item ${options.n} not found`);
+}
+
+/**
+ *
+ * Get the first item in an async generator
+ */
+export async function firstAsync<T>(options: { generator: AsyncGenerator<T>; notFoundError?: Error }): Promise<T> {
+  for await (const item of options.generator) {
+    return item;
+  }
+  throw options.notFoundError ?? new Error("Item not found");
 }
 
 export const Signals = [

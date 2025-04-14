@@ -5,9 +5,8 @@ export interface Node {
   clusterId: string; 
   id: string;
   publicIp: string;
-  privateIp: string;
-  networkCIDR: string;
-  roles: NodeRoles;
+  // privateIp: string;
+  // networkCIDR: string;
 }
 
 export interface ProvisionNodeOptions {
@@ -20,7 +19,6 @@ export interface ProvisionNodeOptions {
   region: "eu";
   clusterId: string;
   peerNodesIds?: string[];
-  roles: NodeRoles;
 }
 
 export interface DeprovisionNodeOptions {
@@ -34,6 +32,7 @@ export type NodeProviderSlug = 'cntb';
 export interface ListNodesOptions {
   clusterId: string;
   withError?: boolean;
+  pageSize?: number;
 }
 
 export interface GetNodeOptions {
@@ -44,7 +43,7 @@ export interface GetNodeOptions {
 export interface NodeProvisioner {
   provisionNode: (options: ProvisionNodeOptions) => Promise<Node>;
   deprovisionNode: (options: DeprovisionNodeOptions) => Promise<void>;
-  listNodes: (options: ListNodesOptions) => Promise<Node[]>;
+  listNodes: (options: ListNodesOptions) => AsyncGenerator<Node>;
   getNode: (options: GetNodeOptions) => Promise<Node>;
 }
 

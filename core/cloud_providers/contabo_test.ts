@@ -11,7 +11,6 @@ const testId = `test=contabo-provider id=${hash('sha256', randomUUID(), 'hex').s
 const provider = new ContaboProvider();
 
 // Test instance variables
-let instanceId: number | undefined = undefined;
 let instance: ContaboInstance | undefined = undefined;
 
 /**
@@ -94,6 +93,7 @@ async function cleanupCurrentResources() {
   console.info("Cleaning up current test resources...");
   
   // Clean up test instance
+  const instanceId = instance?.instanceId;
   if (instanceId) {
     console.info(`Resetting instance ${instanceId}`);
     await provider.resetInstance(instanceId);
@@ -144,18 +144,18 @@ describe(
 
       // Create test instance
       console.info("Creating test instance");
-      instanceId = await provider.ensureInstance({
+      instance = await provider.ensureInstance({
         provisioning: "manual",
-        displayName: testId,
+        displayName: () => testId,
         sshKeys: [],
         privateNetworks: [],
         productId: "V76",
       });
       
       // Verify instance was created
-      instance = await provider.getInstance(instanceId);
+      instance = await provider.getInstance(instance.instanceId);
       assertStringIncludes(instance.displayName, "test=");
-      console.info(`Successfully created instance ${instanceId}`);
+      console.info(`Successfully created instance ${instance.instanceId}`);
     });
 
     it("should create, get, and delete secrets", async () => {
@@ -229,7 +229,7 @@ describe(
       
       try {
         // Verify instance exists
-        if (!instanceId || !instance) {
+        if (!instance) {
           throw new Error("Instance is not created");
         }
         
@@ -260,11 +260,11 @@ describe(
         const secret = await provider.getSecret(secretId);
 
         // Assign private network to instance
-        console.info(`Assigning private network ${privateNetworkId} to instance ${instanceId}`);
+        console.info(`Assigning private network ${privateNetworkId} to instance ${instance.instanceId}`);
         await provider.assignPrivateNetwork(privateNetwork.privateNetworkId, instance.instanceId);
         
         // Reinstall instance with SSH key
-        console.info(`Reinstalling instance ${instanceId} with SSH key ${secretId}`);
+        console.info(`Reinstalling instance ${instance.instanceId} with SSH key ${secretId}`);
         await provider.reinstallInstance({
           instanceId: instance.instanceId,
           sshKeys: [secret.secretId],
@@ -273,7 +273,7 @@ describe(
         // Verify private network assignment
         privateNetwork = await provider.getPrivateNetwork(privateNetworkId);
         const instanceInPrivateNetwork = privateNetwork.instances.find(
-          (inst) => inst.instanceId === instanceId
+          (inst) => inst.instanceId === instance?.instanceId
         );
         assertExists(instanceInPrivateNetwork);
         console.info("Successfully verified private network assignment");
@@ -289,9 +289,9 @@ describe(
         // console.info("Successfully verified private network configuration on instance");
       } finally {
         // Clean up resources
-        if (privateNetworkId !== undefined && instanceId !== undefined) {
-          console.info(`Unassigning private network ${privateNetworkId} from instance ${instanceId}`);
-          await provider.unassignPrivateNetwork(privateNetworkId, instanceId).catch(() => {});
+        if (privateNetworkId !== undefined && instance?.instanceId !== undefined) {
+          console.info(`Unassigning private network ${privateNetworkId} from instance ${instance.instanceId}`);
+          await provider.unassignPrivateNetwork(privateNetworkId, instance.instanceId).catch(() => {});
         }
         
         if (privateNetworkId !== undefined) {

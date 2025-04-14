@@ -1,6 +1,6 @@
 import { describe, it } from "@std/testing/bdd";
 import { ContaboNodeProvisioner } from "./contabo.ts";
-import { ContaboProvider } from "../cloud-providers/contabo.ts";
+import { ContaboProvider } from "../cloud_providers/contabo.ts";
 import { Node, NodeProvider, NodeProvisioner } from "./mod.ts";
 import { assertExists } from "@std/assert";
 import { assertFalse } from "@std/assert/false";
@@ -12,30 +12,14 @@ const contaboNodeProvisioner = new ContaboNodeProvisioner(contaboProvider);
 const provisioners = { contabo: contaboNodeProvisioner } satisfies Record<NodeProvider, NodeProvisioner>;
 
 // Test cluster ID
-const clusterId = "test";
+const clusterId = "test0000";
 
 /**
  * Cleanup function to remove test resources
  */
 async function cleanup() {
   console.info("Starting cleanup process...");
-  
-  // Clean up private networks
-  const privateNetworks = await contaboProvider.listPrivateNetworks({ name: `cluster=${clusterId}` });
-  console.info(`Found ${privateNetworks.length} private networks to clean up`);
-  
-  for (const privateNetwork of privateNetworks) {
-    // Unassign all instances from private network
-    for (const instance of privateNetwork.instances) {
-      console.info(`Unassigning instance ${instance.instanceId} from private network ${privateNetwork.privateNetworkId}`);
-      await contaboProvider.unassignPrivateNetwork(privateNetwork.privateNetworkId, instance.instanceId);
-    }
-    
-    // Delete private network
-    console.info(`Deleting private network ${privateNetwork.privateNetworkId}`);
-    await contaboProvider.deletePrivateNetwork(privateNetwork.privateNetworkId);
-  }
-  
+
   // Clean up instances
   for (const [provider, provisioner] of Object.entries(provisioners)) {
     console.info(`Cleaning up cluster ${clusterId} on ${provider}`);
@@ -49,7 +33,7 @@ async function cleanup() {
         }
         
         const instancesToCleanUp = instances.filter((instance) =>
-          instance.displayName.startsWith(`cluster=${clusterId}`) && !instance.displayName.includes("error=")
+          instance.displayName.includes(`cluster=${clusterId}`) 
         );
         
         for (const instance of instancesToCleanUp) {
@@ -59,8 +43,7 @@ async function cleanup() {
       }
     } else {
       // For other providers, deprovision nodes
-      const nodes = await provisioner.listNodes({ clusterId });
-      for (const node of nodes) {
+      for await (const node of provisioner.listNodes({ clusterId })) {
         console.info(`Deprovisioning node ${node.id}`);
         await provisioner.deprovisionNode({
           clusterId,
@@ -93,7 +76,6 @@ Object.entries(provisioners).forEach(([provider, provisioner]) => {
           mode: "manual",
           region: "eu",
           clusterId,
-          roles: ["control-plane"],
         });
 
         // Verify node was provisioned
@@ -107,10 +89,10 @@ Object.entries(provisioners).forEach(([provider, provisioner]) => {
 
       it("should list nodes", async () => {
         // List nodes for the cluster
-        const nodes = await provisioner.listNodes({
-          clusterId,
-        });
-        
+        const nodes: Node[] = [];
+        for await (const node of provisioner.listNodes({ clusterId })) {
+          nodes.push(node)
+        }
         // Verify nodes were listed
         assertFalse(nodes.length === 0);
         console.info(`Found ${nodes.length} nodes in cluster ${clusterId}`);
@@ -137,10 +119,11 @@ Object.entries(provisioners).forEach(([provider, provisioner]) => {
           nodeId: node.id,
         });
         
-        // Verify node was deprovisioned
-        const nodes = await provisioner.listNodes({
-          clusterId,
-        });
+        // List nodes for the cluster
+        const nodes: Node[] = [];
+        for await (const node of provisioner.listNodes({ clusterId })) {
+          nodes.push(node)
+        }
         assertFalse(nodes.some(n => n.id === node.id));
         console.info(`Node ${node.id} successfully deprovisioned`);
       });
