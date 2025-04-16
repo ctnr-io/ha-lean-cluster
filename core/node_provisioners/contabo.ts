@@ -1,7 +1,7 @@
 import { paginateFind, paginateFilter, readFile, filterAsync, executeSSH } from "../utils.ts";
 import { DeprovisionNodeOptions, GetNodeOptions, ListNodesOptions, Node, ProvisionNodeOptions } from "./mod.ts";
 import { AbstractNodeProvisioner, NodeProvisioningReportError } from "./abstract.ts";
-import { ContaboProvider, ContaboRegion, ContaboInstance, ContaboProductId } from "../cloud_providers/contabo.ts";
+import { ContaboProvider, ContaboRegion, ContaboInstance, ContaboProductId, ContaboTag, ContaboTagAssignmentResourceType } from "../cloud_providers/contabo.ts";
 import { hash, randomBytes } from "node:crypto";
 
 export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
@@ -18,6 +18,7 @@ export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
     return {
       clusterId: clusterId,
       id: String(instance.instanceId),
+      name: instance.name,
       publicIp: instance.ipConfig.v4.ip,
     };
   }
@@ -35,13 +36,20 @@ export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
         sshKeys: [
           await this.ensureSshKey({
             name: `cluster=${options.clusterId}`,
-            value: await readFile("public.key"),
+            value: options.sshPublicKey,
           }),
         ],
         privateNetworks: [], // We still need private networks for networking, but not for cluster membership
         productId: "V78",
       });
 
+      // Assign instance to cluster
+      await this.assignTag({
+        name: `cluster=${options.clusterId}`,
+        resourceType: "instance",
+        resourceId: String(instance.instanceId),
+      });
+      
       // Transform instance to node
       const node = ContaboNodeProvisioner.transformInstanceToNode({
         clusterId: options.clusterId,
@@ -89,11 +97,18 @@ export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
   }
 
   async deprovisionNode(options: DeprovisionNodeOptions): Promise<void> {
+    // Unassign instance from cluster
+    await this.unassignTag({
+      name: `cluster=${options.clusterId}`,
+      resourceType: "instance",
+      resourceId: options.nodeId,
+    }).catch(console.warn);
     // Reset the instance (clear display name and stop it)
     await this.resetInstance(parseInt(options.nodeId)).catch(console.warn);
   }
 
   async *listNodes(options: ListNodesOptions): AsyncGenerator<Node> {
+    // use tag to list instances, when using the contabo rest api directly, because we can filter by multiple instanceIds
     for await (const instance of paginateFilter({
       request: (pageOptions) =>
         this.provider.listInstances({
@@ -129,6 +144,14 @@ export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
 
   private async resetInstance(instanceId: number): Promise<void> {
     await this.provider.setInstanceDisplayName(instanceId, "");
+    // await this.provider.reinstallInstance({
+    //   instanceId,
+    //   imageId: ContaboProvider.Ubuntu_24_04_ImageId,
+    //   sshKeys: [await this.ensureSshKey({
+    //     name: `cluster=${randomBytes(8).toString("hex")}`,
+    //     value: await readFile("public.key"),
+    //   })],
+    // }).catch(() => {});
     await this.provider.stopInstance(instanceId).catch(() => {});
   }
 
@@ -140,63 +163,63 @@ export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
     await this.resetInstance(instance.instanceId);
   }
 
-  // async getTagByName(name: string): Promise<ContaboTag> {
-  //   return await paginateFind({
-  //     request: (options) => this.provider.listTags({ ...options, tagName: name }),
-  //     condition: (tag) => tag.name === name,
-  //   });
-  // }
+  async getTagByName(name: string): Promise<ContaboTag> {
+    return await paginateFind({
+      request: (options) => this.provider.listTags({ ...options, tagName: name }),
+      condition: (tag) => tag.name === name,
+    });
+  }
 
-  // async ensureTag(options: { name: string; color?: string }): Promise<number> {
-  //   const { name, color } = options;
-  //   try {
-  //     const tag = await this.provider.getTagByName(name);
-  //     // TODO: update tag color if color is provided
-  //     return tag.tagId;
-  //   } catch {
-  //     return await this.provider.createTag({ name, color });
-  //   }
-  // }
+  async ensureTag(options: { name: string; color?: string }): Promise<number> {
+    const { name, color } = options;
+    try {
+      const tag = await this.getTagByName(name);
+      // TODO: update tag color if color is provided
+      return tag.tagId;
+    } catch {
+      return await this.provider.createTag({ name, color });
+    }
+  }
 
-  // async assignTag(options: {
-  //   name: string;
-  //   color?: string;
-  //   resourceType: ContaboTagAssignmentResourceType;
-  //   resourceId: string;
-  // }): Promise<number> {
-  //   const { name, color, resourceType, resourceId } = options;
-  //   const tagId = await this.provider.ensureTag({ name, color });
-  //   const tagAssignments = await this.provider.listTagAssignments({
-  //     tagId,
-  //   });
-  //   const tagAssignment = tagAssignments.find(
-  //     (tagAssignment) => tagAssignment.resourceId === resourceId && tagAssignment.resourceType === resourceType
-  //   );
-  //   if (tagAssignment) {
-  //     throw new Error(`Tag ${name} already assigned to resource ${resourceId} of type ${resourceType}`);
-  //   }
-  //   await this.provider.createTagAssignment({ tagId, resourceType, resourceId });
-  //   return tagId;
-  // }
+  async assignTag(options: {
+    name: string;
+    color?: string;
+    resourceType: ContaboTagAssignmentResourceType;
+    resourceId: string;
+  }): Promise<number> {
+    const { name, color, resourceType, resourceId } = options;
+    const tagId = await this.ensureTag({ name, color });
+    const tagAssignments = await this.provider.listTagAssignments({
+      tagId,
+    });
+    const tagAssignment = tagAssignments.find(
+      (tagAssignment) => tagAssignment.resourceId === resourceId && tagAssignment.resourceType === resourceType
+    );
+    if (tagAssignment) {
+      throw new Error(`Tag ${name} already assigned to resource ${resourceId} of type ${resourceType}`);
+    }
+    await this.provider.createTagAssignment({ tagId, resourceType, resourceId });
+    return tagId;
+  }
 
-  // async unassignTag(options: {
-  //   name: string;
-  //   resourceType: ContaboTagAssignmentResourceType;
-  //   resourceId: string;
-  // }): Promise<void> {
-  //   const { name, resourceType, resourceId } = options;
-  //   const tag = await this.provider.getTagByName(name);
-  //   const tagAssignments = await this.provider.listTagAssignments({
-  //     tagId: tag.tagId,
-  //   });
-  //   if (tagAssignments.length === 0) {
-  //     throw new Error(`Tag ${name} not assigned to resource ${resourceId} of type ${resourceType}`);
-  //   }
-  //   await this.provider.deleteTagAssignment({ tagId: tag.tagId, resourceType, resourceId });
-  //   if (tagAssignments.length === 1) {
-  //     await this.provider.deleteTag(tag.tagId);
-  //   }
-  // }
+  async unassignTag(options: {
+    name: string;
+    resourceType: ContaboTagAssignmentResourceType;
+    resourceId: string;
+  }): Promise<void> {
+    const { name, resourceType, resourceId } = options;
+    const tag = await this.getTagByName(name);
+    const tagAssignments = await this.provider.listTagAssignments({
+      tagId: tag.tagId,
+    });
+    if (tagAssignments.length === 0) {
+      throw new Error(`Tag ${name} not assigned to resource ${resourceId} of type ${resourceType}`);
+    }
+    await this.provider.deleteTagAssignment({ tagId: tag.tagId, resourceType, resourceId });
+    if (tagAssignments.length === 1) {
+      await this.provider.deleteTag(tag.tagId);
+    }
+  }
 
   // async isTagAssignedToResource(options: {
   //   name: string;
@@ -271,8 +294,9 @@ export class ContaboNodeProvisioner extends AbstractNodeProvisioner {
               );
               return false;
             }
-            // If imageId is not the default image, reinstall it
-            if (instance.imageId !== ContaboProvider.Ubuntu_24_04_ImageId) {
+            // If imageId is not the ubuntu image, reinstall it
+            // Or sshKeys are not the current keys, reinstall it
+            if (instance.imageId !== ContaboProvider.Ubuntu_24_04_ImageId || !options.sshKeys.every((sshKeyId) => instance.sshKeys.includes(sshKeyId))) {
               await this.provider.reinstallInstance({
                 instanceId: instance.instanceId,
                 sshKeys: options.sshKeys,

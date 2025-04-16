@@ -4,6 +4,7 @@ export const NodeRoles = ["control-plane", "etcd", "worker"] as const;
 export interface Node {
   clusterId: string; 
   id: string;
+  name: string;
   publicIp: string;
   // privateIp: string;
   // networkCIDR: string;
@@ -19,6 +20,7 @@ export interface ProvisionNodeOptions {
   region: "eu";
   clusterId: string;
   peerNodesIds?: string[];
+  sshPublicKey: string;
 }
 
 export interface DeprovisionNodeOptions {

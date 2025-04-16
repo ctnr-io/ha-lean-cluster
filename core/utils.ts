@@ -157,6 +157,20 @@ export async function executeSSH(
 }
 
 /**
+ * Paginate through a list of items via function `fn` and return all the items
+ */
+export async function* paginateAll<T>(options: {
+  request: (options: { page: number; size: number }) => Promise<T[]>;
+  sorter?: (a: T, b: T) => number;
+  pageSize?: number;
+  maxPages?: number;
+}): AsyncGenerator<T> {
+  for await (const item of paginateFilter({ ...options, condition: () => true })) {
+    yield item;
+  }
+}
+
+/**
  * Paginate through a list of items via function `fn` and return the first item that satisfies the condition `condition`.
  */
 export async function paginateFind<T>(options: {

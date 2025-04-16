@@ -8,8 +8,8 @@ import {
   UpgradeClusterOptions,
 } from "./mod.ts";
 import { Node, NodeProvisioner } from "../node_provisioners/mod.ts";
-import { exec, executeSSH, findAsync, firstAsync, sh, yaml } from "../utils.ts";
-import { randomUUID } from "node:crypto";
+import { exec, executeSSH, findAsync, firstAsync, sh, yaml, readFile } from "../utils.ts";
+import { hash, randomUUID } from "node:crypto";
 
 export abstract class AbstractKubernetesAdministrator implements KubernetesAdministrator {
   abstract upgradeCluster(clusterId: string, options: UpgradeClusterOptions): Promise<KubernetesAdministrator>;
@@ -47,6 +47,7 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
       mode: "manual",
       region: "eu",
       clusterId,
+      sshPublicKey: await readFile("public.key"),
     });
 
     // Reset any previous kubeadm init
@@ -136,7 +137,7 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
 
     // Find a control plane node to get the join command from
     const controlPlaneNode = await firstAsync({
-      generator: this.listNodes({ clusterId, type: "control-plane" }),
+      generator: this.listNodes({ clusterId, role: "control-plane" }),
       notFoundError: new Error("No control plane node found in the cluster"),
     });
 
@@ -145,6 +146,7 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
       mode: "manual",
       region: "eu",
       clusterId: clusterId,
+      sshPublicKey: await readFile("public.key"),
     });
 
     // Reset any previous kubeadm init
@@ -180,6 +182,11 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
     // Join the node to the cluster
     await executeSSH(newNode.publicIp, joinCommand);
 
+    // Add roles to the node
+    for (const role of roles) {
+      await executeSSH(controlPlaneNode.publicIp, `kubectl label node ${newNode.name} node-role.kubernetes.io/${role}=${role} --overwrite`);
+    }
+
     return newNode;
   }
 
@@ -193,7 +200,7 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
 
     // Find the first control plane node that is not the one being removed
     const controlPlaneNode = await findAsync({
-      generator: this.listNodes({ clusterId, type: "control-plane" }),
+      generator: this.listNodes({ clusterId, role: "control-plane" }),
       condition: (controlPlaneNode) => controlPlaneNode.publicIp !== nodeToRemove.publicIp,
       notFoundError: new Error("Cannot remove the only control plane node, delete the cluster instead"),
     });
@@ -201,13 +208,13 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
     // Drain the node
     await executeSSH(
       controlPlaneNode.publicIp,
-      `kubectl --kubeconfig=/etc/kubernetes/admin.conf drain ${nodeToRemove.publicIp} --ignore-daemonsets --delete-emptydir-data --force`
+      `kubectl --kubeconfig=/etc/kubernetes/admin.conf drain ${nodeToRemove.name} --ignore-daemonsets --delete-emptydir-data --force`
     );
 
     // Delete the node from Kubernetes
     await executeSSH(
       controlPlaneNode.publicIp,
-      `kubectl --kubeconfig=/etc/kubernetes/admin.conf delete node ${nodeToRemove.publicIp}`
+      `kubectl --kubeconfig=/etc/kubernetes/admin.conf delete node ${nodeToRemove.name}`
     );
 
     // Reset the node
@@ -230,15 +237,15 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
    */
   public async *listNodes(options: {
     clusterId: string;
-    type?: "control-plane" | "worker" | "etcd";
+    role?: "control-plane" | "worker" | "etcd";
   }): AsyncGenerator<Node> {
-    const { clusterId, type } = options;
+    const { clusterId, role } = options;
     let nodeIps: string[] = [];
     for await (const node of this.nodeProvisioner.listNodes({ clusterId })) {
       try {
         const [stdout] = await executeSSH(
           node.publicIp,
-          `kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes -l node-role.kubernetes.io/${type} -o=jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'`
+          `kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes -l node-role.kubernetes.io/${role} -o=jsonpath='{.items[*].status.addresses[*].address}'`
         );
         nodeIps = stdout.split(" ");
         break;
@@ -248,7 +255,7 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
       }
     }
     if (nodeIps.length === 0) {
-      throw new Error(type ? `Cannot find any ${type} nodes` : "Cannot find any nodes");
+      throw new Error(role ? `Cannot find any ${role} nodes` : "Cannot find any nodes");
     }
     for await (const node of this.nodeProvisioner.listNodes({ clusterId })) {
       if (nodeIps.some((ip) => ip === node.publicIp)) {
@@ -269,7 +276,7 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
 
     // Find a control plane node to get the join command from
     const controlPlaneNode = await firstAsync({
-      generator: this.listNodes({ clusterId, type: "control-plane" }),
+      generator: this.listNodes({ clusterId, role: "control-plane" }),
       notFoundError: new Error("No control plane node found in the cluster"),
     });
 
@@ -301,7 +308,7 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
     const { backupPath } = options;
 
     // Get all control plane nodes
-    const controlPlaneNodes = await Array.fromAsync(this.listNodes({ clusterId, type: "control-plane" }));
+    const controlPlaneNodes = await Array.fromAsync(this.listNodes({ clusterId, role: "control-plane" }));
 
     // Stop kubelet and etcd on all control plane nodes
     await Promise.all(
@@ -345,7 +352,7 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
   async checkEtcdHealth(clusterId: string): Promise<EtcdHealthStatus> {
     // Find a control plane node
     const controlPlaneNode = await firstAsync({
-      generator: this.listNodes({ clusterId, type: "control-plane" }),
+      generator: this.listNodes({ clusterId, role: "control-plane" }),
       notFoundError: new Error("No control plane node found in the cluster"),
     });
 

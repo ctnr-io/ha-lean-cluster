@@ -95,7 +95,7 @@ export interface UpgradeClusterOptions {
 
 export interface ListNodesOptions {
   clusterId: string;
-  type?: "control-plane" | "worker" | "etcd";
+  role?: "control-plane" | "worker" | "etcd";
 }
 
 export interface KubernetesAdministrator {

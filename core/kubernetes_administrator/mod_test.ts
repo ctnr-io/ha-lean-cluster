@@ -68,7 +68,7 @@ describe(
 
       // Find the control plane node
       const controlPlaneNode = await firstAsync({
-        generator: k8sAdmin.listNodes({ clusterId, type: "control-plane" }),
+        generator: k8sAdmin.listNodes({ clusterId, role: "control-plane" }),
       });
       assertExists(controlPlaneNode);
 
@@ -84,10 +84,11 @@ describe(
     it("should add a worker node to the cluster", async () => {
       // Find the control plane node
       const controlPlaneNode = await firstAsync({
-        generator: k8sAdmin.listNodes({ clusterId, type: "control-plane" }),
+        generator: k8sAdmin.listNodes({ clusterId, role: "control-plane" }),
       });
       assertExists(controlPlaneNode);
 
+      // Add a worker node
       const workerNode = await k8sAdmin.addNode({
         clusterId: clusterId,
         roles: ["worker"],
@@ -115,7 +116,7 @@ describe(
     it("should add a control plane node to the cluster", async () => {
       // Find the control plane node
       const controlPlaneNode = await firstAsync({
-        generator: k8sAdmin.listNodes({ clusterId, type: "control-plane" }),
+        generator: k8sAdmin.listNodes({ clusterId, role: "control-plane" }),
       });
       assertExists(controlPlaneNode);
 
@@ -138,7 +139,7 @@ describe(
       // Verify the node has the correct role
       const [nodeRoleOutput] = await executeSSH(
         controlPlaneNode.publicIp,
-        `kubectl --kubeconfig=/etc/kubernetes/admin.conf get node ${secondControlPlaneNode.publicIp} -o jsonpath='{.metadata.labels}'`
+        `kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes -o jsonpath='{.items[*].status.addresses[*].address}' | grep ${secondControlPlaneNode.publicIp}`
       );
       console.info("Second control plane node labels:", nodeRoleOutput);
       assertExists(nodeRoleOutput.includes("node-role.kubernetes.io/control-plane"));
@@ -147,7 +148,7 @@ describe(
     it("should remove a node from the cluster", async () => {
       // Find the control plane node
       const controlPlaneNode = await firstAsync({
-        generator: k8sAdmin.listNodes({ clusterId, type: "control-plane" }),
+        generator: k8sAdmin.listNodes({ clusterId, role: "control-plane" }),
       });
       assertExists(controlPlaneNode);
 
@@ -155,7 +156,7 @@ describe(
       const workerNode = await firstAsync({
         generator: k8sAdmin.listNodes({
           clusterId,
-          type: "worker",
+          role: "worker",
         }),
       });
       assertExists(workerNode);
@@ -196,7 +197,7 @@ describe(
     // it("should backup etcd", async () => {
     //   // Find the control plane node
     //   const controlPlaneNode = await firstAsync({
-    //     generator: k8sAdmin.listNodes({ clusterId, type: "control-plane" }),
+    //     generator: k8sAdmin.listNodes({ clusterId, role: "control-plane" }),
     //   });
     //   assertExists(controlPlaneNode);
 

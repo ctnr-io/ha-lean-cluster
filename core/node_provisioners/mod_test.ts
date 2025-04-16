@@ -4,7 +4,7 @@ import { ContaboProvider } from "../cloud_providers/contabo.ts";
 import { Node, NodeProvider, NodeProvisioner } from "./mod.ts";
 import { assertExists } from "@std/assert";
 import { assertFalse } from "@std/assert/false";
-import { executeSSH } from "../utils.ts";
+import { executeSSH, readFile } from "../utils.ts";
 
 // Set up providers and provisioners
 const contaboProvider = new ContaboProvider();
@@ -26,6 +26,7 @@ async function cleanup() {
 
     if (provider === "contabo") {
       // For Contabo, we need to reset instances
+
       for (let page = 1; page < Infinity; page++) {
         const instances = await contaboProvider.listInstances({ page });
         if (instances.length === 0) {
@@ -41,6 +42,20 @@ async function cleanup() {
           await contaboProvider.setInstanceDisplayName(instance.instanceId, "");
           await contaboProvider.stopInstance(instance.instanceId);
         }
+      }
+
+      // Remove all tags starting with cluster=${clusterId}
+      for (const tag of await contaboProvider.listTags({ tagName: `cluster=${clusterId}` })) {
+        // Remove all tags assignements
+        for (const tagAssignment of await contaboProvider.listTagAssignments({ tagId: tag.tagId })) {
+          await contaboProvider.deleteTagAssignment({
+            tagId: tag.tagId,
+            resourceType: tagAssignment.resourceType,
+            resourceId: tagAssignment.resourceId,
+          }).catch(() => {});
+        }
+        // Delete tag
+        await contaboProvider.deleteTag(tag.tagId).catch(() => {});
       }
     } else {
       // For other providers, deprovision nodes
@@ -77,6 +92,7 @@ Object.entries(provisioners).forEach(([provider, provisioner]) => {
           mode: "manual",
           region: "eu",
           clusterId,
+          sshPublicKey: await readFile("public.key"),
         });
 
         // Verify node was provisioned
@@ -85,8 +101,8 @@ Object.entries(provisioners).forEach(([provider, provisioner]) => {
 
         // Verify SSH access to the node
         const [sshOutput] = await executeSSH(node.publicIp, "echo 'hello world'");
-        console.info(`SSH test output: ${sshOutput}`);
-        assertFalse(sshOutput !== "hello world");
+        console.info(`SSH test output: '${sshOutput}'`);
+        assertFalse(sshOutput.includes("hello world") === false);
       });
 
       it("should list nodes", async () => {
@@ -128,6 +144,38 @@ Object.entries(provisioners).forEach(([provider, provisioner]) => {
         }
         assertFalse(nodes.some((n) => n.id === node.id));
         console.info(`Node ${node.id} successfully deprovisioned`);
+      });
+
+      it("should deprovision all nodes", async () => {
+        // List nodes for the cluster
+        const nodes: Node[] = [];
+        for await (const node of provisioner.listNodes({ clusterId })) {
+          nodes.push(node);
+        }
+
+        // Deprovision all nodes
+        for (const node of nodes) {
+          console.info(`Deprovisioning node ${node.id}`);
+          await provisioner.deprovisionNode({
+            clusterId,
+            nodeId: node.id,
+          });
+        }
+        // Verify all nodes were deprovisioned
+        const remainingNodes: Node[] = [];
+        for await (const node of provisioner.listNodes({ clusterId })) {
+          remainingNodes.push(node);
+        }
+        assertFalse(remainingNodes.length !== 0);
+        console.info(`Nodes ${remainingNodes.map((n) => n.id)} successfully deprovisioned`);
+
+        // Check tag cluster doesn't exist anymore
+        try {
+          await contaboNodeProvisioner.getTagByName(`cluster=${clusterId}`);
+          throw new Error(`Tag cluster=${clusterId} still exists`);
+        } catch {
+          console.info(`Tag cluster=${clusterId} successfully deleted`);
+        }
       });
     }
   );

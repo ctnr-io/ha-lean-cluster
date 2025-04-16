@@ -142,7 +142,7 @@ export interface ContaboTagAssignment {
   customerId: string;
   resourceId: string;
   resourceName: string;
-  resourceType: string;
+  resourceType: 'instance' | 'image' | 'object-storage';
   tagId: number;
   tagName: string;
   tenantId: string;
@@ -482,66 +482,66 @@ export class ContaboProvider {
     await this.exec(`cntb delete privateNetwork "${privateNetworkId}"`);
   }
 
-  // async createTag(options: { name: string; color?: string }): Promise<number> {
-  //   return parseInt(
-  //     await this.exec(`cntb create tag --name "${options.name}" ${options.color ? `--color "${options.color}"` : ""}`)
-  //   );
-  // }
+  async createTag(options: { name: string; color?: string }): Promise<number> {
+    return parseInt(
+      await this.exec(`cntb create tag --name "${options.name}" ${options.color ? `--color "${options.color}"` : ""}`)
+    );
+  }
 
-  // async deleteTag(tagId: number): Promise<void> {
-  //   await this.exec(`cntb delete tag "${tagId}"`);
-  // }
+  async deleteTag(tagId: number): Promise<void> {
+    await this.exec(`cntb delete tag "${tagId}"`);
+  }
 
-  // listTags(options: ContaboListOptions<{ tagName?: string }>): Promise<ContaboTag[]> {
-  //   return this.execList(
-  //     ["cntb get tags --output json", options.tagName && `--tagName "${options.tagName}"`].filter(Boolean).join(" "),
-  //     options
-  //   );
-  // }
+  listTags(options: ContaboListOptions<{ tagName?: string }>): Promise<ContaboTag[]> {
+    return this.execList(
+      ["cntb get tags --output json", options.tagName && `--tagName "${options.tagName}"`].filter(Boolean).join(" "),
+      options
+    );
+  }
 
-  // async getTag(tagId: number): Promise<ContaboTag> {
-  //   return JSON.parse(await this.exec(`cntb get tag --output json "${tagId}"`))[0] as ContaboTag;
-  // // }
+  async getTag(tagId: number): Promise<ContaboTag> {
+    return JSON.parse(await this.exec(`cntb get tag --output json "${tagId}"`))[0] as ContaboTag;
+  }
 
-  // async createTagAssignment(options: {
-  //   tagId: number;
-  //   resourceType: ContaboTagAssignmentResourceType;
-  //   resourceId: string;
-  // }): Promise<void> {
-  //   const { tagId, resourceType, resourceId } = options;
-  //   await this.exec(`cntb create tagAssignment "${tagId}" "${resourceType}" "${resourceId}"`);
-  // }
+  async createTagAssignment(options: {
+    tagId: number;
+    resourceType: ContaboTagAssignmentResourceType;
+    resourceId: string;
+  }): Promise<void> {
+    const { tagId, resourceType, resourceId } = options;
+    await this.exec(`cntb create tagAssignment "${tagId}" "${resourceType}" "${resourceId}"`);
+  }
 
-  // async deleteTagAssignment(options: {
-  //   tagId: number;
-  //   resourceType: ContaboTagAssignmentResourceType;
-  //   resourceId: string;
-  // }): Promise<void> {
-  //   const { tagId, resourceType, resourceId } = options;
-  //   await this.exec(`cntb delete tagAssignment "${tagId}" "${resourceType}" "${resourceId}"`);
-  // }
+  async deleteTagAssignment(options: {
+    tagId: number;
+    resourceType: ContaboTagAssignmentResourceType;
+    resourceId: string;
+  }): Promise<void> {
+    const { tagId, resourceType, resourceId } = options;
+    await this.exec(`cntb delete tagAssignment "${tagId}" "${resourceType}" "${resourceId}"`);
+  }
 
-  // listTagAssignments(
-  //   options: ContaboListOptions<{
-  //     tagId?: number;
-  //   }>
-  // ): Promise<ContaboTagAssignment[]> {
-  //   return this.execList(["cntb get tagAssignments --output json", options.tagId].filter(Boolean).join(" "), options);
-  // }
+  listTagAssignments(
+    options: ContaboListOptions<{
+      tagId?: number;
+    }>
+  ): Promise<ContaboTagAssignment[]> {
+    return this.execList(["cntb get tagAssignments --output json", options.tagId].filter(Boolean).join(" "), options);
+  }
 
-  // async getTagAssignment(
-  //   options: ContaboListOptions<{
-  //     tagId: number;
-  //     resourceId: string;
-  //     resourceType: "instance" | "image" | "object-storage";
-  //   }>
-  // ): Promise<ContaboTagAssignment> {
-  //   return JSON.parse(
-  //     await this.exec(
-  //       `cntb get tagAssignment --output json "${options.tagId}" "${options.resourceId}" "${options.resourceType}"`
-  //     )
-  //   )[0] as ContaboTagAssignment;
-  // }
+  async getTagAssignment(
+    options: ContaboListOptions<{
+      tagId: number;
+      resourceId: string;
+      resourceType: "instance" | "image" | "object-storage";
+    }>
+  ): Promise<ContaboTagAssignment> {
+    return JSON.parse(
+      await this.exec(
+        `cntb get tagAssignment --output json "${options.tagId}" "${options.resourceId}" "${options.resourceType}"`
+      )
+    )[0] as ContaboTagAssignment;
+  }
 
   
 }

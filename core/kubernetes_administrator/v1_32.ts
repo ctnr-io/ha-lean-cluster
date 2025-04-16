@@ -100,7 +100,7 @@ export class KubernetesAdministratorV1_32 extends AbstractKubernetesAdministrato
     const { etcdNodes } = options;
 
     // Get control plane nodes
-    const controlPlaneNodes = await Array.fromAsync(this.listNodes({ clusterId, type: "control-plane" }));
+    const controlPlaneNodes = await Array.fromAsync(this.listNodes({ clusterId, role: "control-plane" }));
 
     // Before upgrading, backup etcd
     const backupPath = await this.backupEtcd(clusterId);
