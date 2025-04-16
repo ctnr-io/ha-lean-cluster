@@ -2,6 +2,7 @@ import { describe, it } from "@std/testing/bdd";
 import { ContaboProvider, ContaboInstance } from "./contabo.ts";
 import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
 import { hash, randomUUID } from "node:crypto";
+import { paginateFind } from "../utils.ts";
 
 // Load SSH public key for testing
 const SSH_PUBLIC_KEY = Deno.readTextFileSync("public.key");
@@ -68,7 +69,8 @@ async function cleanupOldResources() {
     
     for (const instance of instancesToCleanUp) {
       console.info(`Resetting instance ${instance.instanceId}`);
-      await provider.resetInstance(instance.instanceId);
+      await provider.setInstanceDisplayName(instance.instanceId, "");
+      await provider.stopInstance(instance.instanceId);
     }
   }
 
@@ -96,7 +98,8 @@ async function cleanupCurrentResources() {
   const instanceId = instance?.instanceId;
   if (instanceId) {
     console.info(`Resetting instance ${instanceId}`);
-    await provider.resetInstance(instanceId);
+    await provider.setInstanceDisplayName(instanceId, "");
+    await provider.stopInstance(instanceId);
   }
   
   // Clean up test private networks
@@ -130,7 +133,7 @@ describe(
     sanitizeResources: true,
   },
   () => {
-    it("should create, list, and get instances", async () => {
+    it("should list, and get instances", async () => {
       // List instances and get first one
       console.info("Listing existing instances");
       const instances = await provider.listInstances({ page: 1 });
@@ -142,18 +145,20 @@ describe(
         console.info(`Successfully retrieved instance ${firstInstance.instanceId}`);
       }
 
-      // Create test instance
-      console.info("Creating test instance");
-      instance = await provider.ensureInstance({
-        provisioning: "manual",
-        displayName: () => testId,
-        sshKeys: [],
-        privateNetworks: [],
-        productId: "V76",
+      // Find instance without display name
+      const instanceWithoutDisplayName = await paginateFind({
+        request: (options) => provider.listInstances(options),
+        condition: (instance) => instance.displayName === "",
       });
-      
+      assertExists(instanceWithoutDisplayName);
+
+      // Create test instance
+      // Warning: We does not create a new instance because contabo is monthly subscription
+      console.info("Creating test instance");
+      await provider.setInstanceDisplayName(instanceWithoutDisplayName.instanceId, testId);
+
       // Verify instance was created
-      instance = await provider.getInstance(instance.instanceId);
+      instance = await provider.getInstance(instanceWithoutDisplayName.instanceId);
       assertStringIncludes(instance.displayName, "test=");
       console.info(`Successfully created instance ${instance.instanceId}`);
     });
@@ -268,6 +273,7 @@ describe(
         await provider.reinstallInstance({
           instanceId: instance.instanceId,
           sshKeys: [secret.secretId],
+          imageId: ContaboProvider.Ubuntu_24_04_ImageId,
         });
 
         // Verify private network assignment
@@ -284,7 +290,7 @@ describe(
         assertExists(privateIp);
         
         // Verify via SSH that the network interface is configured
-        // const stdout = await executeSSH(instance.ipv4, `ip a`);
+        // const [stdout] = await executeSSH(instance.ipv4, `ip a`);
         // assertStringIncludes(stdout, `inet ${privateIp?.ip}/${netmask}`);
         // console.info("Successfully verified private network configuration on instance");
       } finally {

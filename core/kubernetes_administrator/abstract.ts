@@ -54,7 +54,7 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
     // Clean up any previous Kubernetes files
     await executeSSH(
       controlPlaneNode.publicIp,
-      sh`rm -rf /etc/kubernetes /var/lib/kubelet /var/lib/etcd /etc/cni/net.d`
+      sh`rm -rf /etc/kubernetes /var/lib/kubelet /var/lib/etcd /etc/cni/net.d $HOME/.kube/config`
     );
 
     // Install kubeadm, kubelet, and kubectl dependencies
@@ -95,6 +95,9 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
     // Initialize the cluster with kubeadm using the config file
     await executeSSH(controlPlaneNode.publicIp, sh`kubeadm init --config=/tmp/kubeadm-config.yaml --upload-certs`);
 
+    // Move the kubeconfig file to the user's home directory
+    await executeSSH(controlPlaneNode.publicIp, sh`cp /etc/kubernetes/admin.conf $HOME/.kube/config`);
+
     return clusterId;
   }
 
@@ -114,7 +117,7 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
           await executeSSH(node.publicIp, "kubeadm reset -f");
 
           // Clean up any remaining Kubernetes files
-          await executeSSH(node.publicIp, sh`rm -rf /etc/kubernetes /var/lib/kubelet /var/lib/etcd /etc/cni/net.d`);
+          await executeSSH(node.publicIp, sh`rm -rf /etc/kubernetes /var/lib/kubelet /var/lib/etcd /etc/cni/net.d $HOME/.kube/config`);
 
           // Deprovision the node
           await this.nodeProvisioner.deprovisionNode({
@@ -145,30 +148,33 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
     });
 
     // Reset any previous kubeadm init
-    await executeSSH(controlPlaneNode.publicIp, sh`kubeadm reset -f || true`);
+    await executeSSH(newNode.publicIp, sh`kubeadm reset -f || true`);
     // Clean up any previous Kubernetes files
     await executeSSH(
-      controlPlaneNode.publicIp,
-      sh`rm -rf /etc/kubernetes /var/lib/kubelet /var/lib/etcd /etc/cni/net.d`
+      newNode.publicIp,
+      sh`rm -rf /etc/kubernetes /var/lib/kubelet /var/lib/etcd /etc/cni/net.d $HOME/.kube/config`
     );
+
+    // Install dependencies on the new node
+    await this.installDependencies(newNode);
 
     // Get the join command from the control plane
     let joinCommand: string;
 
     if (roles.includes("control-plane")) {
       // Get the control plane join command with certificate key
-      const certKey = await executeSSH(
+      const [certKey] = await executeSSH(
         controlPlaneNode.publicIp,
         "kubeadm init phase upload-certs --upload-certs | tail -1"
       );
 
-      joinCommand = await executeSSH(
+      [joinCommand] = await executeSSH(
         controlPlaneNode.publicIp,
         `kubeadm token create --print-join-command --certificate-key ${certKey}`
       );
     } else {
       // Get the worker join command
-      joinCommand = await executeSSH(controlPlaneNode.publicIp, "kubeadm token create --print-join-command");
+      [joinCommand] = await executeSSH(controlPlaneNode.publicIp, "kubeadm token create --print-join-command");
     }
 
     // Join the node to the cluster
@@ -207,7 +213,7 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
     // Reset the node
     try {
       await executeSSH(nodeToRemove.publicIp, "kubeadm reset -f");
-      await executeSSH(nodeToRemove.publicIp, sh`rm -rf /etc/kubernetes /var/lib/kubelet /var/lib/etcd /etc/cni/net.d`);
+      await executeSSH(nodeToRemove.publicIp, sh`rm -rf /etc/kubernetes /var/lib/kubelet /var/lib/etcd /etc/cni/net.d $HOME/.kube/config`);
     } catch (error) {
       console.error(`Error resetting node ${nodeToRemove.id}: ${error}`);
     }
@@ -227,44 +233,29 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
     type?: "control-plane" | "worker" | "etcd";
   }): AsyncGenerator<Node> {
     const { clusterId, type } = options;
+    let nodeIps: string[] = [];
     for await (const node of this.nodeProvisioner.listNodes({ clusterId })) {
-      let nodeIps: string[];
       try {
-        nodeIps = JSON.parse(
-          await executeSSH(
-            node.publicIp,
-            [
-              "kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes -o json",
-              "jq " +
-              [
-                ".items",
-                type && `map(select(.metadata.labels."node-role.kubernetes.io/${type}"))`,
-                ".[].status.addresses",
-                'map(select(.type == "InternalIP").address)',
-              ]
-                .filter(Boolean)
-                .join(" | ")
-                .replace(/^/, "'")
-                .replace(/$/g, "'"),
-            ]
-              .flat()
-              .join(" | ")
-          )
-        ) as string[];
+        const [stdout] = await executeSSH(
+          node.publicIp,
+          `kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes -l node-role.kubernetes.io/${type} -o=jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'`
+        );
+        nodeIps = stdout.split(" ");
+        break;
       } catch {
         // try the next node
         continue;
       }
-      if (nodeIps.length === 0) {
-        throw new Error(type ? `Cannot find any ${type} nodes` : "Cannot find any nodes");
-      }
-      for await (const node of this.nodeProvisioner.listNodes({ clusterId })) {
-        if (nodeIps.some((ip) => ip === node.publicIp)) {
-          yield node;
-        }
-      }
-      return;
     }
+    if (nodeIps.length === 0) {
+      throw new Error(type ? `Cannot find any ${type} nodes` : "Cannot find any nodes");
+    }
+    for await (const node of this.nodeProvisioner.listNodes({ clusterId })) {
+      if (nodeIps.some((ip) => ip === node.publicIp)) {
+        yield node;
+      }
+    }
+    return;
   }
 
   /**
@@ -359,7 +350,7 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
     });
 
     // Check etcd health
-    const healthOutput = await executeSSH(
+    const [healthOutput] = await executeSSH(
       controlPlaneNode.publicIp,
       sh`ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379 \
         --cacert=/etc/kubernetes/pki/etcd/ca.crt \
@@ -369,7 +360,7 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
     );
 
     // Check etcd members
-    const membersOutput = await executeSSH(
+    const [membersOutput] = await executeSSH(
       controlPlaneNode.publicIp,
       sh`ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379 \
         --cacert=/etc/kubernetes/pki/etcd/ca.crt \
@@ -379,7 +370,7 @@ export abstract class AbstractKubernetesAdministrator implements KubernetesAdmin
     );
 
     // Check for alarms
-    const alarmsOutput = await executeSSH(
+    const [alarmsOutput] = await executeSSH(
       controlPlaneNode.publicIp,
       sh`ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379 \
         --cacert=/etc/kubernetes/pki/etcd/ca.crt \

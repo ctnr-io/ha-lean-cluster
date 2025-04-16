@@ -107,7 +107,7 @@ export async function executeSSH(
     retries?: number;
     timeout?: number;
   }
-): Promise<string> {
+): Promise<[stdout: string, stderr: string]> {
   const sshArgs = [
     "-i",
     "private.key",
@@ -123,7 +123,7 @@ export async function executeSSH(
   try {
     return await retry({
       fn: () =>
-        new Promise<string>((resolve, reject) => {
+        new Promise<[stdout: string, stderr: string]>((resolve, reject) => {
           // Use shell: true to execute the command in a shell
           const child = childProcess.execFile(
             "ssh",
@@ -131,11 +131,12 @@ export async function executeSSH(
             { shell: false },
             (error, stdout, stderr) => {
               if (error) {
+                console.warn(stderr);
                 reject(error);
                 return;
               }
               console.log(stdout)
-              resolve(stdout + stderr);
+              resolve([stdout, stderr]);
             }
           );
 
@@ -239,7 +240,6 @@ export async function retry<T>(options: {
   let retries = 0;
   const start = performance.now();
   while (true) {
-    console.log('Trying...', { retries, maxRetries });
     try {
       return await fn();
     } catch (error) {
@@ -309,6 +309,7 @@ export async function nthAsync<T>(options: {
  */
 export async function firstAsync<T>(options: { generator: AsyncGenerator<T>; notFoundError?: Error }): Promise<T> {
   for await (const item of options.generator) {
+    console.log(item);
     return item;
   }
   throw options.notFoundError ?? new Error("Item not found");

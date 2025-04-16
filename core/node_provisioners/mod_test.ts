@@ -23,7 +23,7 @@ async function cleanup() {
   // Clean up instances
   for (const [provider, provisioner] of Object.entries(provisioners)) {
     console.info(`Cleaning up cluster ${clusterId} on ${provider}`);
-    
+
     if (provider === "contabo") {
       // For Contabo, we need to reset instances
       for (let page = 1; page < Infinity; page++) {
@@ -31,14 +31,15 @@ async function cleanup() {
         if (instances.length === 0) {
           break;
         }
-        
+
         const instancesToCleanUp = instances.filter((instance) =>
-          instance.displayName.includes(`cluster=${clusterId}`) 
+          instance.displayName.includes(`cluster=${clusterId}`)
         );
-        
+
         for (const instance of instancesToCleanUp) {
           console.info(`Resetting instance ${instance.instanceId}`);
-          await contaboProvider.resetInstance(instance.instanceId);
+          await contaboProvider.setInstanceDisplayName(instance.instanceId, "");
+          await contaboProvider.stopInstance(instance.instanceId);
         }
       }
     } else {
@@ -52,7 +53,7 @@ async function cleanup() {
       }
     }
   }
-  
+
   console.info("Cleanup completed");
 }
 
@@ -69,7 +70,7 @@ Object.entries(provisioners).forEach(([provider, provisioner]) => {
     },
     () => {
       let node: Node;
-      
+
       it("should provision a node", async () => {
         // Provision a test node
         node = await provisioner.provisionNode({
@@ -81,17 +82,18 @@ Object.entries(provisioners).forEach(([provider, provisioner]) => {
         // Verify node was provisioned
         assertExists(node.id);
         console.info(`Provisioned node with ID: ${node.id}`);
-        
+
         // Verify SSH access to the node
-        const sshOutput = await executeSSH(node.publicIp, "echo 'hello world'");
+        const [sshOutput] = await executeSSH(node.publicIp, "echo 'hello world'");
         console.info(`SSH test output: ${sshOutput}`);
+        assertFalse(sshOutput !== "hello world");
       });
 
       it("should list nodes", async () => {
         // List nodes for the cluster
         const nodes: Node[] = [];
         for await (const node of provisioner.listNodes({ clusterId })) {
-          nodes.push(node)
+          nodes.push(node);
         }
         // Verify nodes were listed
         assertFalse(nodes.length === 0);
@@ -104,7 +106,7 @@ Object.entries(provisioners).forEach(([provider, provisioner]) => {
           clusterId,
           nodeId: node.id,
         });
-        
+
         // Verify node was retrieved
         assertExists(retrievedNode);
         assertFalse(retrievedNode.id !== node.id);
@@ -118,13 +120,13 @@ Object.entries(provisioners).forEach(([provider, provisioner]) => {
           clusterId,
           nodeId: node.id,
         });
-        
+
         // List nodes for the cluster
         const nodes: Node[] = [];
         for await (const node of provisioner.listNodes({ clusterId })) {
-          nodes.push(node)
+          nodes.push(node);
         }
-        assertFalse(nodes.some(n => n.id === node.id));
+        assertFalse(nodes.some((n) => n.id === node.id));
         console.info(`Node ${node.id} successfully deprovisioned`);
       });
     }
